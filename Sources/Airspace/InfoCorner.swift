@@ -12,8 +12,8 @@ struct InfoCorner: View {
     static let width: CGFloat = 420
 
     /// Approximate area the block occupies, so map labels can stay out of it.
-    static func footprint(corner: Corner, size: CGSize, insets: EdgeInsets) -> CGRect {
-        let h: CGFloat = 230
+    static func footprint(corner: Corner, size: CGSize, insets: EdgeInsets, legendRows: Int = 0) -> CGRect {
+        let h: CGFloat = 230 + (legendRows > 0 ? CGFloat(legendRows) * 21 + 44 : 0)
         let x = corner == .topLeft || corner == .bottomLeft ? insets.leading + margin - 12 : size.width - insets.trailing - margin - width + 12
         let y = corner == .topLeft || corner == .topRight ? insets.top + margin - 12 : size.height - insets.bottom - margin - h + 12
         return CGRect(x: x, y: y, width: width, height: h)
@@ -30,7 +30,9 @@ struct InfoCorner: View {
                 if isTop {
                     placeBlock(now: timeline.date)
                     overheadBlock
+                    airlineBlock
                 } else {
+                    airlineBlock
                     overheadBlock
                     placeBlock(now: timeline.date)
                 }
@@ -98,6 +100,55 @@ struct InfoCorner: View {
         return nil
     }
 
+    // MARK: Airlines
+
+    static func legendRows(_ model: AppModel) -> Int {
+        guard model.settings.infoEnabled, model.settings.infoShowAirlines, model.settings.colorMode == .airline else { return 0 }
+        let l = model.airlineLegend
+        return l.entries.count + (l.otherAirlines > 0 ? 1 : 0) + (l.privateAircraft > 0 ? 1 : 0)
+    }
+
+    @ViewBuilder
+    private var airlineBlock: some View {
+        if Self.legendRows(model) > 0 {
+            let legend = model.airlineLegend
+            VStack(alignment: hAlign, spacing: 5) {
+                Text("AIRLINES IN VIEW")
+                    .font(Typeface.caption(9.5))
+                    .tracking(2.4)
+                    .foregroundStyle(palette.textTertiary.color)
+                    .padding(.bottom, 3)
+                ForEach(legend.entries, id: \.code) { entry in
+                    legendRow(name: model.airlineNames[entry.code] ?? entry.code, count: entry.count,
+                              color: palette.airlineColor(entry.slot), emphasis: true)
+                }
+                if legend.otherAirlines > 0 {
+                    legendRow(name: "Other airlines", count: legend.otherAirlines, color: palette.otherAirline, emphasis: false)
+                }
+                if legend.privateAircraft > 0 {
+                    legendRow(name: "Private & other", count: legend.privateAircraft, color: palette.privateAircraft, emphasis: false)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: isLeading ? .leading : .trailing)
+        }
+    }
+
+    private func legendRow(name: String, count: Int, color: RGBA, emphasis: Bool) -> some View {
+        HStack(spacing: 10) {
+            PlaneMark(color: color, outline: palette.land)
+                .frame(width: 16, height: 16)
+            Text(name)
+                .font(.system(size: 12.5, weight: emphasis ? .medium : .regular))
+                .foregroundStyle((emphasis ? palette.textPrimary : palette.textSecondary).color)
+                .lineLimit(1)
+            Spacer(minLength: 12)
+            Text("\(count)")
+                .font(Typeface.mono(11, .medium))
+                .foregroundStyle(palette.textSecondary.color)
+        }
+        .frame(width: 230)
+    }
+
     // MARK: Overhead
 
     @ViewBuilder
@@ -117,10 +168,8 @@ struct InfoCorner: View {
                         .font(Typeface.mono(22, .semibold))
                         .tracking(1.5)
                         .foregroundStyle(palette.textPrimary.color)
-                    Circle()
-                        .fill(palette.altitudeColor(r.altitudeFt).color)
-                        .frame(width: 7, height: 7)
-                        .shadow(color: palette.altitudeColor(r.altitudeFt).color.opacity(palette.glow), radius: 4)
+                    PlaneMark(color: model.color(for: r, palette: palette), outline: palette.land)
+                        .frame(width: 18, height: 18)
                     if isLeading { Spacer(minLength: 0) }
                 }
                 if let line = routeLine(o.details) {
@@ -154,5 +203,25 @@ struct InfoCorner: View {
         if let gs = r.groundSpeedKt { parts.append("\(Int(gs.rounded())) KT") }
         parts.append(Format.distance(miles: miles))
         return parts.joined(separator: "  ·  ")
+    }
+}
+
+/// A small plane icon for legends and the info corner, matching the map's glyph.
+struct PlaneMark: View {
+    let color: RGBA
+    let outline: RGBA
+
+    var body: some View {
+        Canvas { ctx, size in
+            let path = Silhouettes.jet
+            let box = path.boundingBoxOfPath
+            let s = min(size.width, size.height) / max(box.width, box.height) * 0.92
+            let t = CGAffineTransform(scaleX: s, y: s)
+                .concatenating(CGAffineTransform(rotationAngle: .pi / 4))
+                .concatenating(CGAffineTransform(translationX: size.width / 2, y: size.height / 2))
+            let shape = Path(path).applying(t)
+            ctx.stroke(shape, with: .color(outline.color), lineWidth: 1.2)
+            ctx.fill(shape, with: .color(color.color))
+        }
     }
 }

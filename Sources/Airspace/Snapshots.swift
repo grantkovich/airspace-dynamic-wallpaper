@@ -23,13 +23,15 @@ enum Snapshots {
         let variants: [(String, (inout WallpaperSettings) -> Void)] = [
             ("schematic-night", { $0.appearance = .dark }),
             ("schematic-aluminum", { $0.appearance = .light }),
-            ("schematic-night-silhouette-alt", { $0.appearance = .dark; $0.glyph = .silhouette; $0.labelMode = .callsignAltitude }),
+            ("schematic-night-altitude-colors", { $0.appearance = .dark; $0.colorMode = .altitude; $0.labelMode = .callsignTypeAltitude }),
+            ("schematic-night-dots", { $0.appearance = .dark; $0.glyph = .light }),
             ("schematic-aluminum-mono-arrow", { $0.appearance = .light; $0.colorMode = .monochrome; $0.glyph = .arrow; $0.infoCorner = .topRight }),
             ("field-night", { $0.appearance = .dark; $0.mapStyle = .pureField }),
             ("field-aluminum-nolabels", { $0.appearance = .light; $0.mapStyle = .pureField; $0.labelMode = .off }),
             ("schematic-night-zoom10", { $0.appearance = .dark; $0.zoomMiles = 10 }),
             ("schematic-night-zoom120", { $0.appearance = .dark; $0.zoomMiles = 120 }),
         ]
+        renderGlyphSpecimen(dir: dir)
         renderAppleMap(center: center, name: name, geo: geo, reports: reports, size: size, dir: dir)
         if arguments.contains("--benchmark") {
             benchmark(center: center, geo: geo, reports: reports, size: size)
@@ -56,6 +58,36 @@ enum Snapshots {
             let url = dir.appendingPathComponent(file + ".png")
             try? png.write(to: url)
             print("wrote \(url.path)")
+        }
+    }
+
+    /// Every aircraft class large and at actual size, on both palettes.
+    static func renderGlyphSpecimen(dir: URL) {
+        let classes: [AircraftClass] = [.jet, .heavy, .quad, .tailJet, .turboprop, .light, .helicopter]
+        let view = VStack(spacing: 0) {
+            ForEach([Palette.night, Palette.aluminum], id: \.isDark) { palette in
+                Canvas { ctx, size in
+                    ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(palette.land.color))
+                    for (i, cls) in classes.enumerated() {
+                        let color = palette.altitudeColors[i % palette.altitudeColors.count]
+                        for (scale, y) in [(4.0, 90.0), (1.0, 195.0)] {
+                            var t = CGAffineTransform(scaleX: scale, y: scale)
+                                .concatenating(CGAffineTransform(rotationAngle: scale == 1 ? .pi / 4 : 0))
+                                .concatenating(CGAffineTransform(translationX: 70 + Double(i) * 125, y: y))
+                            let shape = Path(Silhouettes.path(for: cls).copy(using: &t)!)
+                            ctx.stroke(shape, with: .color(palette.land.color), style: StrokeStyle(lineWidth: 1.6, lineJoin: .round))
+                            ctx.fill(shape, with: .color(color.color))
+                        }
+                    }
+                }
+                .frame(width: 900, height: 230)
+            }
+        }
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        if let tiff = renderer.nsImage?.tiffRepresentation,
+           let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: dir.appendingPathComponent("glyphs.png"))
         }
     }
 

@@ -2,6 +2,13 @@ import AirspaceCore
 import AppKit
 import Observation
 
+struct AirlineLegend: Equatable {
+    struct Entry: Equatable { var code: String; var slot: AirlineSlot; var count: Int }
+    var entries: [Entry] = []
+    var otherAirlines = 0
+    var privateAircraft = 0
+}
+
 /// The nearest airborne flight, shown in the info corner.
 struct OverheadFlight: Equatable {
     var hex: String
@@ -34,6 +41,11 @@ final class AppModel {
     private(set) var activeSourceName = ReadsbSource.Endpoint.adsbLol.rawValue
     private(set) var aircraftInView = 0
     private(set) var overhead: OverheadFlight?
+    /// Airline (ICAO code) → colour slot, for the airlines with a colour right now.
+    private(set) var airlineSlots: [String: AirlineSlot] = [:]
+    private(set) var airlineLegend = AirlineLegend()
+    private(set) var airlineNames: [String: String] = [:]
+    @ObservationIgnored private var airlineAssigner = AirlineColorAssigner()
     /// Bumps on every successful fetch so lightweight views can refresh.
     private(set) var dataGeneration = 0
 
@@ -103,6 +115,17 @@ final class AppModel {
     func palette(at date: Date = Date()) -> Palette {
         let daylight = center.map { Solar.daylight(elevation: Solar.elevation(at: date, coordinate: $0)) } ?? (systemIsDark ? 0 : 1)
         return Palette.resolve(settings.appearance, source: settings.dynamicSource, systemIsDark: systemIsDark, daylight: daylight)
+    }
+
+    /// The colour an aircraft is drawn in, per the colour mode.
+    func color(for r: AircraftReport, palette: Palette) -> RGBA {
+        switch settings.colorMode {
+        case .altitude: return palette.altitudeColor(r.onGround ? 0 : r.altitudeFt)
+        case .monochrome: return palette.monochrome
+        case .airline:
+            guard let code = Airlines.code(fromCallsign: r.callsign) else { return palette.privateAircraft }
+            return airlineSlots[code].map(palette.airlineColor) ?? palette.otherAirline
+        }
     }
 
     /// Settings-level filters applied at draw time so toggles take effect instantly.
@@ -251,6 +274,9 @@ final class AppModel {
             tracker.removeAll()
             overhead = nil
             aircraftInView = 0
+            airlineAssigner = AirlineColorAssigner()
+            airlineSlots = [:]
+            airlineLegend = AirlineLegend()
             refreshSoon()
         }
     }
@@ -319,11 +345,38 @@ final class AppModel {
         }
     }
 
+    /// Counts airlines on screen, keeps the colour assignment stable, and names new airlines.
+    private func updateAirlines(_ inView: [DisplayAircraft]) {
+        var counts: [String: Int] = [:]
+        var privateCount = 0
+        for a in inView {
+            if let code = Airlines.code(fromCallsign: a.report.callsign) { counts[code, default: 0] += 1 } else { privateCount += 1 }
+        }
+        airlineAssigner.update(counts: counts)
+        if airlineSlots != airlineAssigner.assignments { airlineSlots = airlineAssigner.assignments }
+
+        let assigned = airlineSlots.keys.sorted { (counts[$0] ?? 0) > (counts[$1] ?? 0) }
+        let otherCount = counts.filter { airlineSlots[$0.key] == nil }.values.reduce(0, +)
+        airlineLegend = AirlineLegend(
+            entries: assigned.map { .init(code: $0, slot: airlineSlots[$0]!, count: counts[$0] ?? 0) },
+            otherAirlines: otherCount, privateAircraft: privateCount)
+
+        for code in assigned where airlineNames[code] == nil {
+            airlineNames[code] = Airlines.displayName(code) ?? code   // placeholder until the lookup returns
+            Task { [weak self] in
+                guard let self, let name = await self.detailsService.airlineName(code) else { return }
+                self.airlineNames[code] = name
+            }
+        }
+    }
+
     private func updateDerivedTraffic(center: Coordinate) {
         let now = Date().timeIntervalSince1970
         let bounds = Projection(center: center, size: primaryScreenSize, radiusNM: settings.radiusNM).visibleBounds
         let visible = tracker.snapshot(at: now).filter { isVisible($0.report) && !$0.report.onGround }
-        aircraftInView = visible.filter { bounds.contains($0.position) }.count
+        let inView = visible.filter { bounds.contains($0.position) }
+        aircraftInView = inView.count
+        updateAirlines(inView)
 
         let nearest = visible.min { Geo.distanceNM($0.position, center) < Geo.distanceNM($1.position, center) }
         guard let nearest else { overhead = nil; return }

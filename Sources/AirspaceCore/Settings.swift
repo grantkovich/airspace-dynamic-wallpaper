@@ -3,9 +3,12 @@ import Foundation
 public enum MapStyle: String, Codable, CaseIterable, Sendable { case schematic, appleMap, pureField }
 public enum AppearanceMode: String, Codable, CaseIterable, Sendable { case light, dark, dynamic }
 public enum DynamicSource: String, Codable, CaseIterable, Sendable { case system, sun }
-public enum LabelMode: String, Codable, CaseIterable, Sendable { case off, callsign, callsignAltitude }
-public enum ColorMode: String, Codable, CaseIterable, Sendable { case altitude, monochrome }
-public enum GlyphStyle: String, Codable, CaseIterable, Sendable { case light, arrow, silhouette }
+public enum LabelMode: String, Codable, CaseIterable, Sendable {
+    case off, callsign, callsignAltitude, callsignType, callsignTypeAltitude
+}
+public enum ColorMode: String, Codable, CaseIterable, Sendable { case airline, altitude, monochrome }
+/// Raw values are persisted; `silhouette` is the plane icon.
+public enum GlyphStyle: String, Codable, CaseIterable, Sendable { case silhouette, light, arrow }
 public enum Corner: String, Codable, CaseIterable, Sendable { case topLeft, topRight, bottomLeft, bottomRight }
 public enum DisplayTarget: String, Codable, CaseIterable, Sendable { case all, mainOnly }
 
@@ -40,9 +43,9 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
     public var tintAppleMap = true
 
     public var labelMode: LabelMode = .callsign
-    public var colorMode: ColorMode = .altitude
+    public var colorMode: ColorMode = .airline
     public var trailMinutes: Double = 3
-    public var glyph: GlyphStyle = .light
+    public var glyph: GlyphStyle = .silhouette
     public var pulse = true
     public var brightness: Double = 0.9
     public var showGroundTraffic = false
@@ -57,6 +60,8 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
     public var infoShowCoordinates = true
     public var infoShowCount = true
     public var infoShowOverhead = true
+    /// Legend of airline colours (only meaningful when colouring by airline).
+    public var infoShowAirlines = true
 
     public var pollInterval: Double = 5
     public var batterySaver = true
@@ -64,6 +69,12 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
     public var displays: DisplayTarget = .all
 
     public var hasCompletedOnboarding = false
+
+    /// Bumped when a default changes in a way existing users should get too.
+    /// 2: plane icons replaced points of light as the default glyph.
+    /// 3: airline colours replaced altitude colours as the default.
+    public static let currentSchema = 3
+    public var schemaVersion = WallpaperSettings.currentSchema
 
     public init() {}
 
@@ -77,8 +88,8 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
         case location, displayName, mapStyle, zoomMiles, showRangeRings, showRunways, showRoads, showDotGrid,
              tintAppleMap, labelMode, colorMode, trailMinutes, glyph, pulse, brightness, showGroundTraffic,
              minAltitudeFt, appearance, dynamicSource, infoEnabled, infoCorner, infoShowClock,
-             infoShowCoordinates, infoShowCount, infoShowOverhead, pollInterval, batterySaver, fpsCap,
-             displays, hasCompletedOnboarding
+             infoShowCoordinates, infoShowCount, infoShowOverhead, infoShowAirlines, pollInterval, batterySaver, fpsCap,
+             displays, hasCompletedOnboarding, schemaVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -112,10 +123,19 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
         infoShowCoordinates = v(.infoShowCoordinates, d.infoShowCoordinates)
         infoShowCount = v(.infoShowCount, d.infoShowCount)
         infoShowOverhead = v(.infoShowOverhead, d.infoShowOverhead)
+        infoShowAirlines = v(.infoShowAirlines, d.infoShowAirlines)
         pollInterval = v(.pollInterval, d.pollInterval)
         batterySaver = v(.batterySaver, d.batterySaver)
         fpsCap = v(.fpsCap, d.fpsCap)
         displays = v(.displays, d.displays)
         hasCompletedOnboarding = v(.hasCompletedOnboarding, d.hasCompletedOnboarding)
+        schemaVersion = v(.schemaVersion, 1)
+        migrate()
+    }
+
+    private mutating func migrate() {
+        if schemaVersion < 2 && glyph == .light { glyph = .silhouette }
+        if schemaVersion < 3 && colorMode == .altitude { colorMode = .airline }
+        schemaVersion = Self.currentSchema
     }
 }

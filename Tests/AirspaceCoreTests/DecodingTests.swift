@@ -73,6 +73,12 @@ private func fixture(_ name: String) throws -> Data {
         #expect(try RouteDecoder.decodeRoute(Data(#"{"response":"unknown callsign"}"#.utf8)) == nil)
     }
 
+    @Test func decodesAdsbdbAirline() throws {
+        let json = #"{"response":[{"name":"SkyWest Airlines","icao":"SKW","iata":"OO"}]}"#
+        #expect(try RouteDecoder.decodeAirlineName(Data(json.utf8)) == "SkyWest Airlines")
+        #expect(try RouteDecoder.decodeAirlineName(Data(#"{"response":"unknown airline"}"#.utf8)) == nil)
+    }
+
     @Test func decodesAdsbdbAircraft() throws {
         let json = #"{"response":{"aircraft":{"type":"172R","icao_type":"C72R","manufacturer":"Cessna","registration":"N456ER"}}}"#
         let info = try #require(try RouteDecoder.decodeAircraft(Data(json.utf8)))

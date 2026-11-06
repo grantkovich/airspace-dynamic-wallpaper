@@ -97,6 +97,12 @@ public enum RouteDecoder {
         return Airframe(manufacturer: ac["manufacturer"] as? String, type: ac["type"] as? String)
     }
 
+    /// `/v0/airline/{icao}` returns a list of matches.
+    public static func decodeAirlineName(_ data: Data) throws -> String? {
+        let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return ((root?["response"] as? [[String: Any]])?.first?["name"]) as? String
+    }
+
     private static func responseObject(_ data: Data) throws -> [String: Any]? {
         let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         return root?["response"] as? [String: Any]

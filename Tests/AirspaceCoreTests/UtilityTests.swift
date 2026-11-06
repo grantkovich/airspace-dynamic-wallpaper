@@ -113,6 +113,20 @@ import Testing
         #expect(s.appearance == WallpaperSettings().appearance)
     }
 
+    @Test func migratesOldDotDefaultToPlaneIcons() throws {
+        let v1 = try JSONDecoder().decode(WallpaperSettings.self, from: Data(#"{"glyph": "light"}"#.utf8))
+        #expect(v1.glyph == .silhouette)
+        #expect(v1.schemaVersion == WallpaperSettings.currentSchema)
+        // A deliberate choice made after the change is kept.
+        let v2 = try JSONDecoder().decode(WallpaperSettings.self, from: Data(#"{"glyph": "light", "schemaVersion": 2}"#.utf8))
+        #expect(v2.glyph == .light)
+        #expect(v1.colorMode == .airline)
+        let chose = try JSONDecoder().decode(WallpaperSettings.self, from: Data(#"{"colorMode": "altitude", "schemaVersion": 3}"#.utf8))
+        #expect(chose.colorMode == .altitude)
+        let arrow = try JSONDecoder().decode(WallpaperSettings.self, from: Data(#"{"glyph": "arrow"}"#.utf8))
+        #expect(arrow.glyph == .arrow)
+    }
+
     @Test func zoomIsClamped() {
         var s = WallpaperSettings()
         s.zoomMiles = 1_000
@@ -184,5 +198,17 @@ import Testing
         #expect(RangeRings.radii(forZoomMiles: 35) == [5, 10, 25])
         #expect(RangeRings.radii(forZoomMiles: 5) == [1, 2.5])
         #expect(RangeRings.radii(forZoomMiles: 150) == [25, 50, 100])
+    }
+}
+
+@Suite struct AircraftClassTests {
+    @Test(arguments: [
+        ("A3", "B738", AircraftClass.jet), ("A3", "A20N", .jet), ("A5", "B77W", .heavy), ("A5", "B789", .heavy),
+        ("A5", "B744", .quad), ("A5", "A388", .quad), ("A3", "CRJ9", .tailJet), ("A2", "GLF5", .tailJet),
+        ("A2", "C56X", .tailJet), ("A2", "AT76", .turboprop), ("A1", "C172", .light), ("A7", "EC35", .helicopter),
+        ("A3", nil, .jet), (nil, "B39M", .jet), (nil, nil, .other),
+    ] as [(String?, String?, AircraftClass)])
+    func classifies(_ category: String?, _ type: String?, _ expected: AircraftClass) {
+        #expect(AircraftClass.classify(category: category, typeCode: type) == expected)
     }
 }

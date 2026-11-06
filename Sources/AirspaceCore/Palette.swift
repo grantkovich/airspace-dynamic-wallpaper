@@ -24,12 +24,18 @@ public struct Palette: Hashable, Sendable {
     public var runway, airportLabel, ring, ringLabel, crosshair: RGBA
     public var textPrimary, textSecondary, textTertiary: RGBA
     public var monochrome: RGBA
+    /// Airline slots (blue, amber, magenta, green), validated for all-pairs CVD separation on this surface.
+    public var airlineColors: [RGBA]
+    /// Airlines without a slot, and aircraft that aren't airline flights.
+    public var otherAirline, privateAircraft: RGBA
     /// Altitude ramp stops (feet → colour), ascending.
     public var altitudeStops: [Double]
     public var altitudeColors: [RGBA]
     /// 0 (light surfaces, glow reads as a soft halo) … 1 (dark, full bloom).
     public var glow: Double
     public var isDark: Bool
+
+    public func airlineColor(_ slot: AirlineSlot) -> RGBA { airlineColors[slot.rawValue] }
 
     public func altitudeColor(_ ft: Double) -> RGBA {
         guard let first = altitudeStops.first, ft > first else { return altitudeColors[0] }
@@ -49,6 +55,8 @@ public struct Palette: Hashable, Sendable {
         ring: RGBA(hex: 0x2C2E33), ringLabel: RGBA(hex: 0x56585C), crosshair: RGBA(hex: 0x8A8780),
         textPrimary: RGBA(hex: 0xECE8E1), textSecondary: RGBA(hex: 0x9A968F), textTertiary: RGBA(hex: 0x5E5C58),
         monochrome: RGBA(hex: 0xF4F1EA),
+        airlineColors: [RGBA(hex: 0x3987E5), RGBA(hex: 0xC98500), RGBA(hex: 0xD55181), RGBA(hex: 0x00802A)],
+        otherAirline: RGBA(hex: 0xA9A59D), privateAircraft: RGBA(hex: 0x6C6A66),
         altitudeStops: stops,
         altitudeColors: [RGBA(hex: 0xFFB13B), RGBA(hex: 0xFF7A59), RGBA(hex: 0xE86FB8), RGBA(hex: 0x7CC8FF), RGBA(hex: 0x6F8CFF)],
         glow: 1, isDark: true)
@@ -60,6 +68,8 @@ public struct Palette: Hashable, Sendable {
         ring: RGBA(hex: 0xCBC8C1), ringLabel: RGBA(hex: 0x9C9993), crosshair: RGBA(hex: 0x5D5B57),
         textPrimary: RGBA(hex: 0x1C1D1F), textSecondary: RGBA(hex: 0x6A6863), textTertiary: RGBA(hex: 0xA19E98),
         monochrome: RGBA(hex: 0x26272A),
+        airlineColors: [RGBA(hex: 0x2A78D6), RGBA(hex: 0xB87600), RGBA(hex: 0xC4457A), RGBA(hex: 0x005F00)],
+        otherAirline: RGBA(hex: 0x6F6C66), privateAircraft: RGBA(hex: 0xA6A39C),
         altitudeStops: stops,
         altitudeColors: [RGBA(hex: 0xD98200), RGBA(hex: 0xE0502E), RGBA(hex: 0xB83F8C), RGBA(hex: 0x1E86C8), RGBA(hex: 0x3A55D9)],
         glow: 0.25, isDark: false)
@@ -74,7 +84,10 @@ public struct Palette: Hashable, Sendable {
             road: m(\.road), stateLine: m(\.stateLine), runway: m(\.runway), airportLabel: m(\.airportLabel),
             ring: m(\.ring), ringLabel: m(\.ringLabel), crosshair: m(\.crosshair),
             textPrimary: m(\.textPrimary), textSecondary: m(\.textSecondary), textTertiary: m(\.textTertiary),
-            monochrome: m(\.monochrome), altitudeStops: a.altitudeStops,
+            monochrome: m(\.monochrome),
+            airlineColors: zip(a.airlineColors, b.airlineColors).map { RGBA.mix($0, $1, t) },
+            otherAirline: m(\.otherAirline), privateAircraft: m(\.privateAircraft),
+            altitudeStops: a.altitudeStops,
             altitudeColors: zip(a.altitudeColors, b.altitudeColors).map { RGBA.mix($0, $1, t) },
             glow: a.glow + (b.glow - a.glow) * t, isDark: t < 0.5 ? a.isDark : b.isDark)
     }

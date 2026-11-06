@@ -108,6 +108,7 @@ public actor FallbackSource: FlightSource {
 public actor FlightDetailsService {
     private var routes: [String: RouteDecoder.Route?] = [:]
     private var airframes: [String: RouteDecoder.Airframe?] = [:]
+    private var airlineNames: [String: String?] = [:]
     private let session: URLSession
 
     public init(session: URLSession = .airspace) { self.session = session }
@@ -121,6 +122,16 @@ public actor FlightDetailsService {
         }
         if let frame = await airframe(hex) { d.aircraftDescription = frame.description }
         return d
+    }
+
+    /// Airline name for an ICAO designator, shortened ("SkyWest Airlines" → "SkyWest").
+    public func airlineName(_ code: String) async -> String? {
+        if let known = Airlines.displayName(code) { return known }
+        if let cached = airlineNames[code] { return cached }
+        guard let data = try? await fetch("https://api.adsbdb.com/v0/airline/\(code)") else { return nil }
+        let name = (try? RouteDecoder.decodeAirlineName(data)).flatMap { $0 }.map(Airlines.shortName)
+        airlineNames[code] = .some(name)
+        return name
     }
 
     /// Registrations like N456ER have no route; airline flights are 3 letters + digits.
