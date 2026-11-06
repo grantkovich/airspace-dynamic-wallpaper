@@ -18,11 +18,18 @@ clicks, and idles when it's covered, locked, or on battery.
   - **Dynamic** follows either the macOS appearance or the sun at your location, fading through civil twilight.
 - **Location:** system location, a zip code or city, or typed coordinates (`41.97, -87.90`, `41°58'N 87°54'W`, …).
 - **Zoom:** 5–150 mile radius, with range rings and a compass.
-- **Aircraft:** point-of-light, arrow or silhouette glyphs, altitude colors or monochrome,
-  fading trails (1, 3 or 10 minutes), a pulse on each update, and callsign or callsign +
-  altitude labels that are placed so they don't collide.
-- **Info corner:** place name, time, number of aircraft in view, and the nearest flight
-  with its type, altitude, speed, route and airline.
+- **Aircraft:** plane icons by airframe (narrow-body, wide-body, four-engine, rear-engine
+  jets, turboprops, light aircraft, helicopters), or points of light, or arrows.
+- **Color by airline** (default): the four busiest airlines on screen each get a color,
+  with a key in the info corner. Alternatively color by altitude (trails show the altitude
+  flown along the way) or use one color for everything.
+- **Labels and trails:** labels show callsign, type and/or altitude and are placed so they
+  don't collide. Trails fade over 1, 3 or 10 minutes, with a pulse on each update.
+- **Info corner:** place name, time, number of aircraft in view, the airline key, and the
+  nearest flight with its type, altitude, speed, route and airline.
+- **Menu bar match:** macOS tints the menu bar, Mission Control and Show Desktop from the
+  *system* wallpaper, so Airspace sets the system wallpaper to a still of the map for each
+  display. Your own wallpaper is restored when Airspace quits or the option is turned off.
 - **Power-aware:**
   - Slower updates on battery or in Low Power Mode.
   - Stops drawing when windows cover the desktop.
@@ -36,6 +43,7 @@ You only need the Swift toolchain. Xcode isn't required; the Command Line Tools 
 make run         # build, bundle into build/Airspace.app (ad-hoc signed), launch
 make test        # unit tests (Swift Testing)
 make snapshots   # render every style/appearance with live traffic into build/snapshots
+swift run -c release Airspace --render-settings build/settings   # Settings window, every section
 ```
 
 On first launch a welcome window asks where you are. After that, everything lives in the
@@ -80,7 +88,8 @@ Tools/                 geodata preprocessor (Natural Earth + OurAirports → Res
 - Live positions: [adsb.lol](https://adsb.lol), with [adsb.fi](https://adsb.fi) as automatic
   fallback. Both are free, need no key, and are fed by community ADS-B receivers.
   Coverage is best near populated areas.
-- Routes and airframes: [adsbdb.com](https://www.adsbdb.com), looked up only for the nearest flight.
+- Routes, airframes and airline names: [adsbdb.com](https://www.adsbdb.com), looked up
+  only for the nearest flight and for airlines that get a color.
 - Map: [Natural Earth](https://www.naturalearthdata.com) 10m and [OurAirports](https://ourairports.com),
   both public domain. Rebuild the map data with `make geodata`.
 

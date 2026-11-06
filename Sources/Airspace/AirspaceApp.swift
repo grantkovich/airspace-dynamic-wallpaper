@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     private var wallpaper: WallpaperController?
     private var power: PowerMonitor?
+    private var systemWallpaper: SystemWallpaperSync?
     private var appearanceObservation: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -18,9 +19,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         power = PowerMonitor(model: model)
         wallpaper = WallpaperController(model: model)
         wallpaper?.show()
+        systemWallpaper = SystemWallpaperSync(model: model)
         if !model.settings.hasCompletedOnboarding {
             WindowRouter.shared.open(.welcome)
         }
+    }
+}
+
+extension AppDelegate {
+    func applicationWillTerminate(_ notification: Notification) {
+        systemWallpaper?.restoreOriginals()
     }
 }
 

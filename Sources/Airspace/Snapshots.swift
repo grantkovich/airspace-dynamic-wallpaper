@@ -281,3 +281,44 @@ private struct AlignmentMarks: View {
         }
     }
 }
+
+/// `Airspace --render-settings <dir>`: draws the real Settings window (AppKit controls and all)
+/// offscreen for every section, for reviewing the UI without screen-recording access.
+@MainActor
+enum SettingsRender {
+    static func run(outputDirectory: String) {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let dir = URL(fileURLWithPath: outputDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var s = WallpaperSettings()
+        s.hasCompletedOnboarding = true
+        let model = AppModel(settings: s, startServices: false)
+        model.primaryScreenSize = CGSize(width: 1512, height: 982)
+        let geo = AppModel.geoDataURL().flatMap { try? GeoData.load(from: $0) }
+        let center = Coordinate(latitude: 41.93, longitude: -87.80)
+        let reports = (try? ReadsbDecoder.decode(Data(contentsOf: URL(fileURLWithPath: "Tests/AirspaceCoreTests/Fixtures/adsbfi.json")),
+                                                 receivedAt: Date().timeIntervalSince1970)) ?? []
+        model.stage(center: center, name: "Chicago", geo: geo, reports: reports, now: Date().timeIntervalSince1970)
+
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            for section in SettingsSection.allCases {
+                let host = NSHostingView(rootView: SettingsView(model: model, initialSection: section)
+                    .environment(\.renderSynchronously, true))
+                let window = NSWindow(contentRect: CGRect(x: -5000, y: -5000, width: 820, height: 700),
+                                      styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+                window.appearance = NSAppearance(named: appearance)
+                window.contentView = host
+                window.layoutIfNeeded()
+                RunLoop.main.run(until: Date().addingTimeInterval(0.6))   // let SwiftUI settle
+                let view = window.contentView!.superview ?? host
+                guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                let name = "\(section.rawValue)-\(appearance == .aqua ? "light" : "dark").png"
+                try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent(name))
+                window.close()
+            }
+        }
+        print("wrote \(dir.path)")
+    }
+}

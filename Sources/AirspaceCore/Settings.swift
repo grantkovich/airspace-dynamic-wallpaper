@@ -67,6 +67,9 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
     public var batterySaver = true
     public var fpsCap: Double = 20
     public var displays: DisplayTarget = .all
+    /// Also set the system wallpaper to a still of the map, so the menu bar (which tints from
+    /// the system wallpaper, not from windows) and Mission Control match.
+    public var syncSystemWallpaper = true
 
     public var hasCompletedOnboarding = false
 
@@ -89,7 +92,7 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
              tintAppleMap, labelMode, colorMode, trailMinutes, glyph, pulse, brightness, showGroundTraffic,
              minAltitudeFt, appearance, dynamicSource, infoEnabled, infoCorner, infoShowClock,
              infoShowCoordinates, infoShowCount, infoShowOverhead, infoShowAirlines, pollInterval, batterySaver, fpsCap,
-             displays, hasCompletedOnboarding, schemaVersion
+             displays, syncSystemWallpaper, hasCompletedOnboarding, schemaVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -128,6 +131,7 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
         batterySaver = v(.batterySaver, d.batterySaver)
         fpsCap = v(.fpsCap, d.fpsCap)
         displays = v(.displays, d.displays)
+        syncSystemWallpaper = v(.syncSystemWallpaper, d.syncSystemWallpaper)
         hasCompletedOnboarding = v(.hasCompletedOnboarding, d.hasCompletedOnboarding)
         schemaVersion = v(.schemaVersion, 1)
         migrate()

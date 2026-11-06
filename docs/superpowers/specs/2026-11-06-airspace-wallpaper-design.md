@@ -68,6 +68,24 @@ Resources/      Info.plist, entitlements, geodata.bin, icon
 - **Apple Map:** desaturated to 25% saturation. The info corner gets a soft backdrop on this
   style because MapKit draws its own labels.
 
+### Additions after the first review (2026-11-06)
+
+- **Plane icons are the default.** There are silhouettes per airframe class (`AircraftClass`
+  adds `quad` and `tailJet`), classified by type designator before emitter category.
+- **Color by airline is the default.**
+  - On a map every pair of colors gets compared, and only 4 categorical slots pass the
+    dataviz validator under all-pairs.
+  - Night: `#3987e5 #c98500 #d55181 #00802a`. Aluminum: `#2a78d6 #b87600 #c4457a #005f00`.
+  - `AirlineColorAssigner` gives the busiest airlines slots, preferring their brand hue.
+    Colors follow the airline, not its rank, and a newcomer displaces the smallest holder
+    only when it has twice as many aircraft and at least 3 more.
+  - Everything else is "other airlines" or "private". The info corner shows the key.
+- **Settings** uses a sidebar with a live preview and visual card pickers.
+- **System wallpaper sync.** The menu bar is tinted from the system wallpaper, not from
+  windows beneath it, so `SystemWallpaperSync` renders the base map per display and sets
+  it as the desktop picture. Originals are saved and restored on quit or when the option
+  is turned off.
+
 ### Components
 
 | Unit | Purpose |
