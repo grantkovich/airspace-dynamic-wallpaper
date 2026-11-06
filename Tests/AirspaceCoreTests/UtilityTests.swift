@@ -157,3 +157,32 @@ import Testing
         #expect(throws: (any Error).self) { try GeoData.decode(Data("nope".utf8)) }
     }
 }
+
+@Suite struct SchematicTests {
+    @Test func buildsChicagoWithLakeAndRunways() throws {
+        let geo = try GeoData.load(from: GeoDataTests.url)
+        let p = Projection(center: Coordinate(latitude: 41.97, longitude: -87.90), size: CGSize(width: 1600, height: 1000), radiusNM: 30)
+        let paths = SchematicGeometry.build(geo, projection: p)
+        #expect(!paths.lakes.isEmpty)
+        #expect(!paths.runways.isEmpty)
+        #expect(paths.airportLabels.contains { $0.code == "ORD" && $0.isMajor })
+        // The bounding box of Lake Michigan's path should reach into the right half of the screen.
+        #expect(paths.lakes.boundingBoxOfPath.maxX > 800)
+    }
+
+    @Test func noWrapArtifactsAcrossAntimeridian() throws {
+        let geo = try GeoData.load(from: GeoDataTests.url)
+        // Fiji sits on the antimeridian
+        let p = Projection(center: Coordinate(latitude: -17.75, longitude: 179.9), size: CGSize(width: 1000, height: 800), radiusNM: 60)
+        let paths = SchematicGeometry.build(geo, projection: p)
+        #expect(!paths.land.isEmpty)
+        let box = paths.land.boundingBoxOfPath
+        #expect(box.width < 1_000_000)   // a wrap bug would span the whole world's width
+    }
+
+    @Test func ringRadii() {
+        #expect(RangeRings.radii(forZoomMiles: 35) == [5, 10, 25])
+        #expect(RangeRings.radii(forZoomMiles: 5) == [1, 2.5])
+        #expect(RangeRings.radii(forZoomMiles: 150) == [25, 50, 100])
+    }
+}
