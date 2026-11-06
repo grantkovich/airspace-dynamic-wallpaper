@@ -8,6 +8,14 @@ struct MenuPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
+            if model.center == nil && !model.isResolvingLocation {
+                Button {
+                    WindowRouter.shared.open(model.settings.hasCompletedOnboarding ? .settings : .welcome)
+                } label: {
+                    Label("Choose Location…", systemImage: "location").frame(maxWidth: .infinity)
+                }
+                .controlSize(.large)
+            }
             Divider()
             row("Appearance") {
                 Picker("Appearance", selection: $model.settings.appearance) {

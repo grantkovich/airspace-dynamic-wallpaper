@@ -1,5 +1,6 @@
 import AirspaceCore
 import AppKit
+import MapKit
 import SwiftUI
 
 /// `Airspace --snapshots <dir> [--at lat,lon] [--name NAME]`
@@ -29,6 +30,7 @@ enum Snapshots {
             ("schematic-night-zoom10", { $0.appearance = .dark; $0.zoomMiles = 10 }),
             ("schematic-night-zoom120", { $0.appearance = .dark; $0.zoomMiles = 120 }),
         ]
+        renderAppleMap(center: center, name: name, geo: geo, reports: reports, size: size, dir: dir)
         if arguments.contains("--benchmark") {
             benchmark(center: center, geo: geo, reports: reports, size: size)
             return
@@ -54,6 +56,61 @@ enum Snapshots {
             let url = dir.appendingPathComponent(file + ".png")
             try? png.write(to: url)
             print("wrote \(url.path)")
+        }
+    }
+
+    /// Apple Map can't go through ImageRenderer, so snapshot the same MKMapRect with
+    /// MKMapSnapshotter and composite our layers over it. Checks alignment too.
+    static func renderAppleMap(center: Coordinate, name: String, geo: GeoData?, reports: [AircraftReport], size: CGSize, dir: URL) {
+        for dark in [true, false] {
+            var s = WallpaperSettings()
+            s.mapStyle = .appleMap
+            s.appearance = dark ? .dark : .light
+            s.zoomMiles = 12
+            let model = AppModel(settings: s, startServices: false)
+            model.primaryScreenSize = size
+            model.stage(center: center, name: name, geo: geo, reports: reports, now: Date().timeIntervalSince1970)
+            let projection = Projection(center: center, size: size, radiusNM: s.radiusNM)
+            let r = projection.worldRect, w = MKMapSize.world.width
+            let options = MKMapSnapshotter.Options()
+            options.mapRect = MKMapRect(x: r.minX * w, y: r.minY * w, width: r.width * w, height: r.height * w)
+            options.size = size
+            let config = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
+            config.pointOfInterestFilter = .excludingAll
+            options.preferredConfiguration = config
+            options.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+
+            final class Box: @unchecked Sendable { var image: NSImage? }
+            let box = Box()
+            let done = DispatchSemaphore(value: 0)
+            MKMapSnapshotter(options: options).start(with: .global()) { snap, error in
+                box.image = snap?.image
+                if let error { print("snapshotter: \(error)") }
+                done.signal()
+            }
+            done.wait()
+            guard let base = box.image else { continue }
+            let palette = model.palette()
+            let view = ZStack(alignment: .topLeading) {
+                Image(nsImage: base).resizable().saturation(AppleMapLayer.saturation).frame(width: size.width, height: size.height)
+                palette.water.color.opacity(palette.isDark ? 0.42 : 0.32)
+                RingsLayer(projection: projection, palette: palette, settings: s)
+                TrafficStack(model: model, size: size, insets: EdgeInsets(top: 33, leading: 0, bottom: 70, trailing: 0), shared: SharedObstacles())
+                InfoStack(model: model, size: size, insets: EdgeInsets(top: 33, leading: 0, bottom: 70, trailing: 0))
+                if ProcessInfo.processInfo.environment["AIRSPACE_ALIGNMENT"] != nil {
+                    AlignmentMarks(projection: projection, geo: geo)
+                }
+            }
+            .frame(width: size.width, height: size.height)
+            .environment(\.renderSynchronously, true)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            if let tiff = renderer.nsImage?.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                let url = dir.appendingPathComponent(dark ? "apple-night.png" : "apple-aluminum.png")
+                try? png.write(to: url)
+                print("wrote \(url.path)")
+            }
         }
     }
 
@@ -168,6 +225,27 @@ struct AppIcon: View {
                 cross.addLine(to: CGPoint(x: c.x + dx * 46, y: c.y + dy * 46))
             }
             ctx.stroke(cross, with: .color(p.crosshair.color), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+        }
+    }
+}
+
+/// Thin cyan runway centrelines from our own data, drawn only in the Apple Map snapshot so
+/// misalignment between MapKit and our projection would be obvious.
+private struct AlignmentMarks: View {
+    let projection: Projection
+    let geo: GeoData?
+
+    var body: some View {
+        Canvas { ctx, _ in
+            guard let geo else { return }
+            var p = Path()
+            for ap in geo.airports(in: projection.visibleBounds) {
+                for (a, b) in ap.runways {
+                    p.move(to: projection.point(a))
+                    p.addLine(to: projection.point(b))
+                }
+            }
+            ctx.stroke(p, with: .color(.cyan.opacity(0.9)), lineWidth: 1)
         }
     }
 }

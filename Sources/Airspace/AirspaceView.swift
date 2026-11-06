@@ -1,4 +1,5 @@
 import AirspaceCore
+import CoreImage
 import MapKit
 import SwiftUI
 
@@ -255,6 +256,7 @@ struct SchematicLayer: View {
 
 /// Apple's muted map, framed to exactly the same Mercator rect as everything drawn on top.
 struct AppleMapLayer: NSViewRepresentable {
+    static let saturation = 0.25
     let projection: Projection
     let dark: Bool
 
@@ -273,6 +275,12 @@ struct AppleMapLayer: NSViewRepresentable {
         view.showsScale = false
         view.showsUserLocation = false
         view.showsPitchControl = false
+        // Mostly desaturate Apple's palette so the map recedes like the other styles.
+        view.wantsLayer = true
+        view.layerUsesCoreImageFilters = true
+        if let filter = CIFilter(name: "CIColorControls", parameters: [kCIInputSaturationKey: Self.saturation]) {
+            view.contentFilters = [filter]
+        }
         return view
     }
 

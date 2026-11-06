@@ -78,7 +78,8 @@ final class AppModel {
             self?.locationMessage = message
             self?.isResolvingLocation = false
         }
-        if self.settings.hasCompletedOnboarding { applyLocation() }
+        // A place chosen in Settings counts even if the welcome window was closed early.
+        if self.settings.hasCompletedOnboarding || self.settings.location != .system { applyLocation() }
         loopTask = Task { [weak self] in await self?.runLoop() }
     }
 

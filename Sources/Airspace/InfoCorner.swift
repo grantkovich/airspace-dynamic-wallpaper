@@ -37,6 +37,15 @@ struct InfoCorner: View {
             }
             .multilineTextAlignment(isLeading ? .leading : .trailing)
             .frame(width: Self.width, alignment: isLeading ? .leading : .trailing)
+            .background {
+                // Apple's map has its own labels; give the text a soft plate on that style only.
+                if model.settings.mapStyle == .appleMap && model.center != nil {
+                    RoundedRectangle(cornerRadius: 32, style: .continuous)
+                        .fill(palette.land.color.opacity(0.88))
+                        .padding(-30)
+                        .blur(radius: 22)
+                }
+            }
             .padding(EdgeInsets(top: insets.top + Self.margin, leading: insets.leading + Self.margin,
                                 bottom: insets.bottom + Self.margin, trailing: insets.trailing + Self.margin))
             .frame(width: size.width, height: size.height,

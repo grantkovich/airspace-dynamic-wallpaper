@@ -51,6 +51,23 @@ Resources/      Info.plist, entitlements, geodata.bin, icon
 - **adsb.lol's routeset endpoint returns nothing**, so routes come from **adsbdb.com**
   (`/v0/callsign/{cs}`, free, no key).
 
+### Changes made during the build
+
+- **Occlusion:** `NSWindow.occlusionState` reports desktop-level windows as hidden even
+  when they're visible, because Finder's icon layer sits above them. The app instead
+  checks every 3 s whether a normal app window covers each screen, using
+  `CGWindowListCopyWindowInfo` bounds, which need no screen-recording permission.
+- **Layering:** the base map, traffic and info corner live in three separate
+  `NSHostingView`s. In a single SwiftUI tree, animating aircraft repainted the base map
+  every frame (about 40% CPU on a 6K display).
+- **Rings:** range rings are drawn inside the base-map canvas, except over Apple Map,
+  saving a full-screen backing surface.
+- **Labels:** labels are pre-rendered bitmaps (`LabelImageCache`). An offscreen benchmark
+  (`--benchmark`) went from 4.1 to 1.8 ms per frame.
+- **Frame rate:** the default is 20 fps (15/20/30/60 selectable).
+- **Apple Map:** desaturated to 25% saturation. The info corner gets a soft backdrop on this
+  style because MapKit draws its own labels.
+
 ### Components
 
 | Unit | Purpose |
