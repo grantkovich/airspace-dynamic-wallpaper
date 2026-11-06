@@ -95,28 +95,28 @@ import Testing
 
 @Suite struct SettingsTests {
     @Test func roundTrips() throws {
-        var s = Settings()
+        var s = WallpaperSettings()
         s.mapStyle = .appleMap
         s.zoomMiles = 80
         s.labelMode = .callsignAltitude
         s.location = .coordinates(Coordinate(latitude: 1, longitude: 2), name: "Somewhere")
-        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(s))
+        let back = try JSONDecoder().decode(WallpaperSettings.self, from: JSONEncoder().encode(s))
         #expect(back == s)
     }
 
     @Test func missingKeysFallBackToDefaults() throws {
         let partial = Data(#"{"zoomMiles": 12, "mapStyle": "pureField", "bogus": true, "labelMode": "nonsense"}"#.utf8)
-        let s = try JSONDecoder().decode(Settings.self, from: partial)
+        let s = try JSONDecoder().decode(WallpaperSettings.self, from: partial)
         #expect(s.zoomMiles == 12)
         #expect(s.mapStyle == .pureField)
-        #expect(s.labelMode == Settings().labelMode)
-        #expect(s.appearance == Settings().appearance)
+        #expect(s.labelMode == WallpaperSettings().labelMode)
+        #expect(s.appearance == WallpaperSettings().appearance)
     }
 
     @Test func zoomIsClamped() {
-        var s = Settings()
+        var s = WallpaperSettings()
         s.zoomMiles = 1_000
-        #expect(s.zoomMiles == Settings.zoomRange.upperBound)
+        #expect(s.zoomMiles == WallpaperSettings.zoomRange.upperBound)
     }
 }
 

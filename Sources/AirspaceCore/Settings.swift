@@ -20,7 +20,7 @@ public enum LocationSetting: Codable, Hashable, Sendable {
 
 /// Everything the user can change. Decoding is tolerant: unknown or invalid values fall back
 /// to defaults, so adding settings never wipes someone's configuration.
-public struct Settings: Codable, Hashable, Sendable {
+public struct WallpaperSettings: Codable, Hashable, Sendable {
     public static let zoomRange: ClosedRange<Double> = 5...150
     public static let trailChoices: [Double] = [0, 1, 3, 10]
     public static let pollChoices: [Double] = [5, 10, 15, 30]
@@ -60,7 +60,7 @@ public struct Settings: Codable, Hashable, Sendable {
 
     public var pollInterval: Double = 5
     public var batterySaver = true
-    public var fpsCap: Double = 30
+    public var fpsCap: Double = 20
     public var displays: DisplayTarget = .all
 
     public var hasCompletedOnboarding = false
@@ -86,7 +86,7 @@ public struct Settings: Codable, Hashable, Sendable {
         func v<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
             (try? c.decodeIfPresent(T.self, forKey: key)) ?? fallback
         }
-        let d = Settings()
+        let d = WallpaperSettings()
         location = v(.location, d.location)
         displayName = v(.displayName, d.displayName)
         mapStyle = v(.mapStyle, d.mapStyle)

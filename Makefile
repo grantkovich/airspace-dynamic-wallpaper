@@ -16,7 +16,7 @@ TEST_FLAGS := $(if $(TEST_FW),-Xswiftc -F$(TEST_FW) -Xlinker -F$(TEST_FW) -Xlink
 SIGN_ID    ?= -
 ENTITLEMENTS := Resources/Airspace.entitlements
 
-.PHONY: build test app run release dmg clean geodata snapshots
+.PHONY: build test app run release dmg clean geodata snapshots icon
 
 build:
 	swift build -c $(CONFIG)
@@ -53,6 +53,11 @@ dmg:
 	rm -rf $(BUILD_DIR)/dmg $(BUILD_DIR)/$(APP_NAME).dmg
 	mkdir -p $(BUILD_DIR)/dmg && cp -R $(APP) $(BUILD_DIR)/dmg/ && ln -s /Applications $(BUILD_DIR)/dmg/Applications
 	hdiutil create -volname $(APP_NAME) -srcfolder $(BUILD_DIR)/dmg -ov -format UDZO $(BUILD_DIR)/$(APP_NAME).dmg
+
+# Re-render Resources/AppIcon.icns from the AppIcon SwiftUI view.
+icon:
+	swift run -c $(CONFIG) $(APP_NAME) --icon $(BUILD_DIR)/AppIcon.iconset
+	iconutil -c icns $(BUILD_DIR)/AppIcon.iconset -o Resources/AppIcon.icns
 
 # Regenerate Resources/geodata.bin from public-domain sources.
 geodata:

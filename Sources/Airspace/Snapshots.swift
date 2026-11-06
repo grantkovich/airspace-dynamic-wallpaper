@@ -1,0 +1,173 @@
+import AirspaceCore
+import AppKit
+import SwiftUI
+
+/// `Airspace --snapshots <dir> [--at lat,lon] [--name NAME]`
+/// Renders each map style × appearance with live traffic into PNGs, for reviewing the look
+/// without installing the wallpaper. (Apple Map isn't renderable headlessly and is skipped.)
+@MainActor
+enum Snapshots {
+    static func run(outputDirectory: String, arguments: [String]) {
+        let center = value(after: "--at", in: arguments).flatMap(CoordinateParser.parse)
+            ?? Coordinate(latitude: 41.93, longitude: -87.80)
+        let name = value(after: "--name", in: arguments) ?? "Chicago"
+        let size = CGSize(width: 1512, height: 982)
+        let dir = URL(fileURLWithPath: outputDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let geo = AppModel.geoDataURL().flatMap { try? GeoData.load(from: $0) }
+        let reports = fetchBlocking(center: center, radiusNM: 200)
+        print("geodata: \(geo != nil ? "loaded" : "missing"), aircraft: \(reports.count)")
+
+        let variants: [(String, (inout WallpaperSettings) -> Void)] = [
+            ("schematic-night", { $0.appearance = .dark }),
+            ("schematic-aluminum", { $0.appearance = .light }),
+            ("schematic-night-silhouette-alt", { $0.appearance = .dark; $0.glyph = .silhouette; $0.labelMode = .callsignAltitude }),
+            ("schematic-aluminum-mono-arrow", { $0.appearance = .light; $0.colorMode = .monochrome; $0.glyph = .arrow; $0.infoCorner = .topRight }),
+            ("field-night", { $0.appearance = .dark; $0.mapStyle = .pureField }),
+            ("field-aluminum-nolabels", { $0.appearance = .light; $0.mapStyle = .pureField; $0.labelMode = .off }),
+            ("schematic-night-zoom10", { $0.appearance = .dark; $0.zoomMiles = 10 }),
+            ("schematic-night-zoom120", { $0.appearance = .dark; $0.zoomMiles = 120 }),
+        ]
+        if arguments.contains("--benchmark") {
+            benchmark(center: center, geo: geo, reports: reports, size: size)
+            return
+        }
+        for (file, configure) in variants {
+            var s = WallpaperSettings()
+            s.hasCompletedOnboarding = true
+            configure(&s)
+            let model = AppModel(settings: s, startServices: false)
+            model.primaryScreenSize = size
+            model.largestScreenSize = size
+            let now = Date().timeIntervalSince1970
+            model.stage(center: center, name: name, geo: geo, reports: reports, now: now,
+                        details: FlightDetails(origin: "ORD", destination: "LGA", airline: "United Airlines"))
+            let view = AirspaceView(model: model, size: size, insets: EdgeInsets(top: 33, leading: 0, bottom: 70, trailing: 0))
+                .environment(\.renderSynchronously, true)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+                print("failed: \(file)"); continue
+            }
+            let url = dir.appendingPathComponent(file + ".png")
+            try? png.write(to: url)
+            print("wrote \(url.path)")
+        }
+    }
+
+    /// Times one frame of the animated layer (aircraft, trails, labels) rendered offscreen.
+    /// ImageRenderer rasterizes on the CPU, so this is an upper bound on per-frame cost.
+    static func benchmark(center: Coordinate, geo: GeoData?, reports: [AircraftReport], size: CGSize) {
+        for (name, labels, trails) in [("full", LabelMode.callsign, 3.0), ("no labels", .off, 3), ("no labels/trails", .off, 0)] {
+            var s = WallpaperSettings()
+            s.labelMode = labels
+            s.trailMinutes = trails
+            let model = AppModel(settings: s, startServices: false)
+            model.primaryScreenSize = size
+            model.stage(center: center, name: "Bench", geo: geo, reports: reports, now: Date().timeIntervalSince1970)
+            let view = TrafficStack(model: model, size: size, insets: EdgeInsets(), shared: SharedObstacles())
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            _ = renderer.cgImage
+            let n = 20
+            let start = Date()
+            for _ in 0..<n {
+                renderer.content = TrafficStack(model: model, size: size, insets: EdgeInsets(), shared: SharedObstacles())
+                _ = renderer.cgImage
+            }
+            let ms = Date().timeIntervalSince(start) / Double(n) * 1000
+            print(String(format: "%@: %.1f ms/frame (%d aircraft drawn)", name, ms, Diagnostics.aircraftDrawn))
+        }
+    }
+
+    private static func value(after flag: String, in args: [String]) -> String? {
+        guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
+    private static func fetchBlocking(center: Coordinate, radiusNM: Double) -> [AircraftReport] {
+        final class Box: @unchecked Sendable { var value: [AircraftReport] = [] }
+        let box = Box()
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            box.value = (try? await ReadsbSource(.adsbLol).aircraft(near: center, radiusNM: radiusNM)) ?? []
+            if box.value.isEmpty {
+                box.value = (try? await ReadsbSource(.adsbFi).aircraft(near: center, radiusNM: radiusNM)) ?? []
+            }
+            done.signal()
+        }
+        done.wait()
+        return box.value
+    }
+}
+
+/// `Airspace --icon <dir.iconset>`: renders the app icon at every size `iconutil` wants.
+@MainActor
+enum IconRenderer {
+    static func run(outputDirectory: String) {
+        let dir = URL(fileURLWithPath: outputDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for (points, scale) in [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1), (128, 2), (256, 1), (256, 2), (512, 1), (512, 2)] {
+            let renderer = ImageRenderer(content: AppIcon().frame(width: 1024, height: 1024))
+            renderer.scale = CGFloat(points * scale) / 1024
+            guard let tiff = renderer.nsImage?.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { continue }
+            let name = scale == 1 ? "icon_\(points)x\(points).png" : "icon_\(points)x\(points)@2x.png"
+            try? png.write(to: dir.appendingPathComponent(name))
+        }
+        print("wrote \(dir.path)")
+    }
+}
+
+/// Night field, dot grid, range rings and three lit aircraft with trails.
+struct AppIcon: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let p = Palette.night
+            let inset: CGFloat = 100
+            let rect = CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)
+            let shape = Path(roundedRect: rect, cornerRadius: 185, style: .continuous)
+            ctx.fill(shape, with: .linearGradient(Gradient(colors: [RGBA(hex: 0x17191C).color, RGBA(hex: 0x0A0B0D).color]),
+                                                 startPoint: CGPoint(x: rect.midX, y: rect.minY), endPoint: CGPoint(x: rect.midX, y: rect.maxY)))
+            ctx.clip(to: shape)
+            var dots = Path()
+            for x in stride(from: rect.minX + 30, to: rect.maxX, by: 52) {
+                for y in stride(from: rect.minY + 30, to: rect.maxY, by: 52) {
+                    dots.addEllipse(in: CGRect(x: x - 3, y: y - 3, width: 6, height: 6))
+                }
+            }
+            ctx.fill(dots, with: .color(p.dotGrid.with(alpha: 0.8).color))
+            let c = CGPoint(x: rect.midX, y: rect.midY)
+            for r in [130.0, 260, 390] {
+                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)),
+                           with: .color(RGBA(hex: 0x3A3C41).color), lineWidth: r == 390 ? 7 : 5)
+            }
+            let planes: [(CGPoint, CGPoint, RGBA)] = [
+                (CGPoint(x: 300, y: 690), CGPoint(x: 560, y: 470), p.altitudeColors[0]),
+                (CGPoint(x: 820, y: 330), CGPoint(x: 640, y: 690), p.altitudeColors[3]),
+                (CGPoint(x: 250, y: 330), CGPoint(x: 430, y: 300), p.altitudeColors[2]),
+            ]
+            for (from, to, color) in planes {
+                var trail = Path()
+                trail.move(to: from)
+                trail.addLine(to: to)
+                ctx.stroke(trail, with: .linearGradient(Gradient(colors: [color.with(alpha: 0).color, color.with(alpha: 0.75).color]),
+                                                        startPoint: from, endPoint: to),
+                           style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                ctx.fill(Path(ellipseIn: CGRect(x: to.x - 70, y: to.y - 70, width: 140, height: 140)),
+                         with: .radialGradient(Gradient(colors: [color.with(alpha: 0.55).color, color.with(alpha: 0).color]),
+                                               center: to, startRadius: 0, endRadius: 70))
+                ctx.fill(Path(ellipseIn: CGRect(x: to.x - 24, y: to.y - 24, width: 48, height: 48)), with: .color(color.color))
+                ctx.fill(Path(ellipseIn: CGRect(x: to.x - 10, y: to.y - 10, width: 20, height: 20)), with: .color(.white.opacity(0.85)))
+            }
+            var cross = Path()
+            for (dx, dy) in [(1.0, 0.0), (-1, 0), (0, 1), (0, -1)] {
+                cross.move(to: CGPoint(x: c.x + dx * 18, y: c.y + dy * 18))
+                cross.addLine(to: CGPoint(x: c.x + dx * 46, y: c.y + dy * 46))
+            }
+            ctx.stroke(cross, with: .color(p.crosshair.color), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+        }
+    }
+}
