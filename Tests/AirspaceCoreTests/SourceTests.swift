@@ -45,9 +45,19 @@ private final class Clock: @unchecked Sendable {
         #expect(try await src.aircraft(near: here, radiusNM: 10).first?.hex == "a")
     }
 
+    /// The map center is rounded to 0.01° (about a kilometer) before it leaves the Mac, and
+    /// the radius grows by a mile so the rounded circle still covers the whole map.
     @Test func endpointsBuildExpectedURLs() {
         let c = Coordinate(latitude: 41.97, longitude: -87.9)
-        #expect(ReadsbSource.Endpoint.adsbLol.url(c, 25.4).absoluteString == "https://api.adsb.lol/v2/point/41.9700/-87.9000/26")
-        #expect(ReadsbSource.Endpoint.adsbFi.url(c, 25).absoluteString == "https://opendata.adsb.fi/api/v2/lat/41.9700/lon/-87.9000/dist/25")
+        #expect(ReadsbSource.Endpoint.adsbLol.url(c, 25.4).absoluteString == "https://api.adsb.lol/v2/point/41.97/-87.90/27")
+        #expect(ReadsbSource.Endpoint.adsbFi.url(c, 25).absoluteString == "https://opendata.adsb.fi/api/v2/lat/41.97/lon/-87.90/dist/26")
+    }
+
+    @Test(arguments: [(38.897_663, -77.036_574, "38.90/-77.04"), (-33.868_82, 151.209_29, "-33.87/151.21"), (0.004, -0.004, "0.00/-0.00")])
+    func sendsOnlyARoundedLocation(_ lat: Double, _ lon: Double, _ expected: String) {
+        let url = ReadsbSource.Endpoint.adsbLol.url(Coordinate(latitude: lat, longitude: lon), 10).absoluteString
+        #expect(url == "https://api.adsb.lol/v2/point/\(expected)/11")
+        // Never more than two decimals in any number of the path.
+        #expect(url.range(of: #"\.\d{3}"#, options: .regularExpression) == nil)
     }
 }

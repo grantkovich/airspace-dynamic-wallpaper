@@ -11,7 +11,11 @@ public enum SourceError: Error, Equatable {
     case http(Int)
 }
 
-let userAgent = "Airspace/1.0 (macOS live wallpaper)"
+/// Names the app, its version and a page where feed operators can reach the developer.
+let userAgent: String = {
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    return "Airspace/\(version) (macOS live wallpaper; +https://grantkovich.com/airspace/)"
+}()
 
 /// Free, keyless readsb-compatible aggregator APIs.
 public struct ReadsbSource: FlightSource {
@@ -19,9 +23,12 @@ public struct ReadsbSource: FlightSource {
         case adsbLol = "adsb.lol"
         case adsbFi = "adsb.fi"
 
+        /// Only a rounded map center leaves the Mac: 0.01° is about a kilometer, enough to keep a
+        /// home address private. Rounding moves the center at most ~0.4 nm, so the radius grows
+        /// by a mile and the circle still covers the whole map.
         public func url(_ c: Coordinate, _ radiusNM: Double) -> URL {
-            let lat = String(format: "%.4f", c.latitude), lon = String(format: "%.4f", c.longitude)
-            let nm = Int(min(250, max(1, radiusNM.rounded(.up))))
+            let lat = String(format: "%.2f", c.latitude), lon = String(format: "%.2f", c.longitude)
+            let nm = Int(min(250, max(1, (radiusNM + 1).rounded(.up))))
             switch self {
             case .adsbLol: return URL(string: "https://api.adsb.lol/v2/point/\(lat)/\(lon)/\(nm)")!
             case .adsbFi: return URL(string: "https://opendata.adsb.fi/api/v2/lat/\(lat)/lon/\(lon)/dist/\(nm)")!
