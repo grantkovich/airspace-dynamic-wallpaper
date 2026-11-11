@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>$(VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>$(VERSION)</string>
+	<string>$(BUILD)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.lifestyle</string>
 	<key>LSMinimumSystemVersion</key>
@@ -31,9 +31,9 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSLocationUsageDescription</key>
-	<string>Airspace centers the live flight map on your location. Your location never leaves your Mac except as the map center sent to the flight-data service.</string>
+	<string>Airspace centers the live flight map on your location. The flight-data services (adsb.lol, adsb.fi) get only the map center, rounded to about a kilometer. Apple also receives it to look up the place name and, with the Apple Map style, to load the map.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Airspace centers the live flight map on your location. Your location never leaves your Mac except as the map center sent to the flight-data service.</string>
+	<string>Airspace centers the live flight map on your location. The flight-data services (adsb.lol, adsb.fi) get only the map center, rounded to about a kilometer. Apple also receives it to look up the place name and, with the Apple Map style, to load the map.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Flight data: adsb.lol, adsb.fi, adsbdb.com. Map data: Natural Earth, OurAirports.</string>
 </dict>

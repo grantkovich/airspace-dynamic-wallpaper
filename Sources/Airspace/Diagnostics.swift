@@ -2,10 +2,10 @@ import Foundation
 import os
 
 /// Cheap counters logged every 30 s:
-/// `log stream --level info --predicate 'subsystem == "com.airspace.wallpaper"'`
+/// `log stream --level info --predicate 'subsystem == "com.grantkovich.airspace"'`
 @MainActor
 enum Diagnostics {
-    static let log = Logger(subsystem: "com.airspace.wallpaper", category: "render")
+    static let log = Logger(subsystem: "com.grantkovich.airspace", category: "render")
     static var framesDrawn = 0
     static var aircraftDrawn = 0
 

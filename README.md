@@ -96,7 +96,7 @@ Tools/                 geodata preprocessor (Natural Earth + OurAirports → Res
   new fix arrives, the plane eases from where it was drawn to its new course over 1.2 s, so
   it never jumps.
 - **Diagnostics:** every 30 s the app logs its render mode, frame count and source:
-  `log stream --level info --predicate 'subsystem == "com.airspace.wallpaper"'`.
+  `log stream --level info --predicate 'subsystem == "com.grantkovich.airspace"'`.
 
 ## Data
 
