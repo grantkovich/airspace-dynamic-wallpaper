@@ -372,6 +372,28 @@ enum SettingsRender {
                 window.close()
             }
         }
+        // The menu-bar panel, with the restore prompt showing.
+        model.wallpaperNeedsManualRestore = true
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let suffix = appearance == .aqua ? "light" : "dark"
+            render(MenuPanel(model: model), size: CGSize(width: 320, height: 640), appearance: appearance,
+                   to: dir.appendingPathComponent("menu-restore-\(suffix).png"))
+        }
         print("wrote \(dir.path)")
+    }
+
+    private static func render(_ root: some View, size: CGSize, appearance: NSAppearance.Name, to url: URL) {
+        let host = NSHostingView(rootView: root.environment(\.renderSynchronously, true))
+        let window = NSWindow(contentRect: CGRect(x: -5000, y: -5000, width: size.width, height: size.height),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: appearance)
+        window.contentView = host
+        window.setContentSize(host.fittingSize.height > 0 ? CGSize(width: size.width, height: min(size.height, host.fittingSize.height)) : size)
+        window.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: url)
+        window.close()
     }
 }

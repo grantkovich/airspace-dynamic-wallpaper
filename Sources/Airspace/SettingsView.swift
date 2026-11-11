@@ -681,6 +681,16 @@ struct DesktopSettings: View {
             if let loginError { Text(loginError).font(.caption).foregroundStyle(.orange) }
         }
 
+        SettingsGroup(title: "Help",
+                      footer: "Diagnostics are versions, displays and feed status, with no location. Paste them into your message.") {
+            SettingsRow(title: "Something wrong?") {
+                HStack {
+                    Button("Copy Diagnostics") { Diagnostics.copySummary(model: model) }
+                    Link("Send Feedback", destination: URL(string: "https://grantkovich.com/contact/")!)
+                }
+            }
+        }
+
         SettingsGroup(title: "Updates") {
             SettingsRow(title: "Refresh every") {
                 Picker("Refresh every", selection: $model.settings.pollInterval) {

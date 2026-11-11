@@ -58,6 +58,7 @@ struct MenuPanel: View {
             HStack {
                 Button(model.paused ? "Resume" : "Pause") { model.paused.toggle() }
                 Spacer()
+                Button("About") { AboutPanel.show() }
                 Button("Settings…") { WindowRouter.shared.open(.settings) }
                 Button("Quit") { NSApp.terminate(nil) }
             }
