@@ -45,9 +45,10 @@ struct WelcomeView: View {
             }
 
             HStack {
-                Text("You can change everything later from the \(Image(systemName: "airplane.circle.fill")) menu.")
+                Text("No account or API key needed: positions come from adsb.lol and adsb.fi, free community networks. You can change everything later from the \(Image(systemName: "airplane.circle.fill")) menu.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Set as Wallpaper") {
                     model.completeOnboarding(with: model.settings.location)

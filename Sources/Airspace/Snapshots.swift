@@ -372,12 +372,14 @@ enum SettingsRender {
                 window.close()
             }
         }
-        // The menu-bar panel, with the restore prompt showing.
+        // The menu-bar panel (with the restore prompt showing) and the welcome window.
         model.wallpaperNeedsManualRestore = true
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let suffix = appearance == .aqua ? "light" : "dark"
             render(MenuPanel(model: model), size: CGSize(width: 320, height: 640), appearance: appearance,
                    to: dir.appendingPathComponent("menu-restore-\(suffix).png"))
+            render(WelcomeView(model: model), size: CGSize(width: 616, height: 900), appearance: appearance,
+                   to: dir.appendingPathComponent("welcome-\(suffix).png"))
         }
         print("wrote \(dir.path)")
     }
