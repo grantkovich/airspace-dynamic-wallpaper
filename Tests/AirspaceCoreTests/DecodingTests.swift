@@ -43,6 +43,14 @@ private func fixture(_ name: String) throws -> Data {
         #expect(delta.verticalRateFpm == -64)   // falls back to baro_rate
     }
 
+    @Test func decodesEmergencyAndMilitaryFlags() throws {
+        let json = #"{"ac":[{"hex":"a1","lat":1,"lon":2,"squawk":"7700","emergency":"general","dbFlags":0},{"hex":"a2","lat":1,"lon":2,"squawk":"4421","emergency":"none","dbFlags":1},{"hex":"a3","lat":1,"lon":2,"dbFlags":8}]}"#
+        let r = try ReadsbDecoder.decode(Data(json.utf8), receivedAt: 0)
+        #expect(r[0].alert == .emergency && !r[0].isMilitary)
+        #expect(r[1].alert == nil && r[1].isMilitary)
+        #expect(r[2].alert == nil && !r[2].isMilitary)   // 8 = LADD, not military
+    }
+
     @Test func skipsAircraftWithoutPosition() throws {
         let json = #"{"ac":[{"hex":"abc123","flight":"TEST1"},{"hex":"def456","lat":1,"lon":2}]}"#
         let reports = try ReadsbDecoder.decode(Data(json.utf8), receivedAt: 0)
@@ -64,9 +72,24 @@ private func fixture(_ name: String) throws -> Data {
         "destination":{"iata_code":"LHR","icao_code":"EGLL","municipality":"London"}}}}
         """#
         let route = try #require(try RouteDecoder.decodeRoute(Data(json.utf8)))
-        #expect(route.origin == "JFK")
-        #expect(route.destination == "LHR")
+        #expect(route.origin?.code == "JFK")
+        #expect(route.origin?.city == "New York")
+        #expect(route.destination?.code == "LHR")
+        #expect(route.destination?.city == "London")
+        #expect(route.origin?.coordinate == nil)   // no lat/lon in this payload
         #expect(route.airline == "American Airlines")
+    }
+
+    @Test func decodesAirportDetailsAndFallsBackToICAO() throws {
+        let json = #"""
+        {"response":{"flightroute":{"callsign":"JIA5123","airline":{"name":"PSA Airlines","icao":"JIA"},
+        "origin":{"iata_code":"","icao_code":"KBGR","latitude":44.8074,"longitude":-68.8281,"municipality":"Bangor","name":"Bangor International Airport"},
+        "destination":{"iata_code":"CLT","icao_code":"KCLT","latitude":35.214,"longitude":-80.9431,"municipality":"Charlotte","name":"Charlotte Douglas International Airport"}}}}
+        """#
+        let route = try #require(try RouteDecoder.decodeRoute(Data(json.utf8)))
+        #expect(route.origin?.code == "KBGR")
+        #expect(route.origin?.coordinate == Coordinate(latitude: 44.8074, longitude: -68.8281))
+        #expect(route.destination?.name == "Charlotte Douglas International Airport")
     }
 
     @Test func unknownCallsignIsNil() throws {

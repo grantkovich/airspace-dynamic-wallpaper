@@ -3,7 +3,7 @@ import AppKit
 import Observation
 
 struct AirlineLegend: Equatable {
-    struct Entry: Equatable { var code: String; var slot: AirlineSlot; var count: Int }
+    struct Entry: Equatable { var code: String; var count: Int }
     var entries: [Entry] = []
     var otherAirlines = 0
     var privateAircraft = 0
@@ -13,6 +13,16 @@ struct AirlineLegend: Equatable {
 struct OverheadFlight: Equatable {
     var hex: String
     var details: FlightDetails?
+}
+
+/// An aircraft in view squawking an emergency code.
+struct AlertFlight: Equatable {
+    var hex: String
+    var name: String
+    var alert: AircraftAlert
+    var squawk: String?
+    var distanceNM: Double
+    var bearingDeg: Double
 }
 
 /// Single source of truth: settings, resolved location, live traffic and power state.
@@ -45,7 +55,25 @@ final class AppModel {
     private(set) var airlineSlots: [String: AirlineSlot] = [:]
     private(set) var airlineLegend = AirlineLegend()
     private(set) var airlineNames: [String: String] = [:]
+    /// Emergencies in view, nearest first.
+    private(set) var alerts: [AlertFlight] = []
+    /// Distinct aircraft seen in view today.
+    private(set) var aircraftToday = 0
+    @ObservationIgnored private var tally = DailyTally()
+    @ObservationIgnored private var persistsTally = true
+    @ObservationIgnored private var tallySavedAt = Date.distantPast
     @ObservationIgnored private var airlineAssigner = AirlineColorAssigner()
+    @ObservationIgnored private var liveryAssigner = LiveryAssigner()
+    /// Livery colours fitted to the current palette; refitting costs a colour-space round trip.
+    @ObservationIgnored private var fittedLiveries: [RGBA: RGBA] = [:]
+    @ObservationIgnored private var fittedLightness: ClosedRange<Double>?
+    @ObservationIgnored private var fittedPaints: [String: LiveryPaint] = [:]
+    @ObservationIgnored private var fittedPartLightness: ClosedRange<Double>?
+    /// Livery mode names more airlines than the four slots, so the key shows a few more.
+    static let liveryLegendRows = 6
+    /// Callsign → brand code. Colouring asks for every aircraft on every frame, and callsigns
+    /// change far less often than that.
+    @ObservationIgnored private var brandCache: [String: String] = [:]
     /// Bumps on every successful fetch so lightweight views can refresh.
     private(set) var dataGeneration = 0
 
@@ -83,6 +111,10 @@ final class AppModel {
         self.settings = settings ?? Self.loadSettings()
         tracker.trailDuration = max(10, self.settings.trailMinutes * 60)
         updatePowerMode()
+        persistsTally = startServices
+        tally = startServices ? Self.loadTally() : DailyTally()
+        tally.record([String](), on: Date())   // drop yesterday's
+        aircraftToday = tally.count
         guard startServices else { return }
         loadGeoData()
         location.onUpdate = { [weak self] coord in self?.systemLocationUpdated(coord) }
@@ -123,9 +155,52 @@ final class AppModel {
         case .altitude: return palette.altitudeColor(r.onGround ? 0 : r.altitudeFt)
         case .monochrome: return palette.monochrome
         case .airline:
-            guard let code = Airlines.code(fromCallsign: r.callsign) else { return palette.privateAircraft }
-            return airlineSlots[code].map(palette.airlineColor) ?? palette.otherAirline
+            guard let code = brandCode(r.callsign) else { return palette.privateAircraft }
+            return airlineColor(code, palette: palette) ?? palette.otherAirline
         }
+    }
+
+    /// The full livery an aircraft is painted in, or nil to draw it in one colour.
+    func paint(for r: AircraftReport, palette: Palette) -> LiveryPaint? {
+        brandCode(r.callsign).flatMap { paint(code: $0, palette: palette) }
+    }
+
+    func paint(code: String, palette: Palette) -> LiveryPaint? {
+        guard settings.colorMode == .airline, settings.liveryColors, settings.fullLivery, settings.glyph == .silhouette
+        else { return nil }
+        if fittedPartLightness != palette.liveryPartLightness {
+            fittedPaints.removeAll(keepingCapacity: true)
+            fittedPartLightness = palette.liveryPartLightness
+        }
+        if let hit = fittedPaints[code] { return hit }
+        guard let livery = Liveries.livery(code) else { return nil }
+        let fitted = palette.livery(livery.paint)
+        fittedPaints[code] = fitted
+        return fitted
+    }
+
+    /// An airline's colour in airline mode, or nil if it has none (it's drawn as "other").
+    func airlineColor(_ code: String, palette: Palette) -> RGBA? {
+        guard settings.liveryColors else { return airlineSlots[code].map(palette.airlineColor) }
+        guard let raw = liveryAssigner.color(code) else { return nil }
+        if fittedLightness != palette.liveryLightness {
+            fittedLiveries.removeAll(keepingCapacity: true)
+            fittedLightness = palette.liveryLightness
+        }
+        if let hit = fittedLiveries[raw] { return hit }
+        let fitted = palette.livery(raw)
+        fittedLiveries[raw] = fitted
+        return fitted
+    }
+
+    /// The airline a callsign is counted and coloured as, memoized (nil for private flights).
+    func brandCode(_ callsign: String?) -> String? {
+        guard let callsign else { return nil }
+        if let hit = brandCache[callsign] { return hit.isEmpty ? nil : hit }
+        if brandCache.count > 5_000 { brandCache.removeAll(keepingCapacity: true) }
+        let code = Airlines.brandCode(fromCallsign: callsign, groupRegionals: settings.groupRegionals)
+        brandCache[callsign] = code ?? ""
+        return code
     }
 
     /// Settings-level filters applied at draw time so toggles take effect instantly.
@@ -198,6 +273,12 @@ final class AppModel {
     private func settingsChanged(from old: WallpaperSettings) {
         if old.location != settings.location { applyLocation() }
         if old.zoomMiles != settings.zoomMiles { refreshSoon() }
+        if old.groupRegionals != settings.groupRegionals, let center {
+            brandCache.removeAll()
+            airlineAssigner = AirlineColorAssigner()
+            liveryAssigner = LiveryAssigner()
+            updateDerivedTraffic(center: center)
+        }
         if old.pollInterval != settings.pollInterval || old.fpsCap != settings.fpsCap || old.batterySaver != settings.batterySaver {
             updatePowerMode()
         }
@@ -275,8 +356,10 @@ final class AppModel {
             overhead = nil
             aircraftInView = 0
             airlineAssigner = AirlineColorAssigner()
+            liveryAssigner = LiveryAssigner()
             airlineSlots = [:]
             airlineLegend = AirlineLegend()
+            alerts = []
             refreshSoon()
         }
     }
@@ -350,15 +433,25 @@ final class AppModel {
         var counts: [String: Int] = [:]
         var privateCount = 0
         for a in inView {
-            if let code = Airlines.code(fromCallsign: a.report.callsign) { counts[code, default: 0] += 1 } else { privateCount += 1 }
+            if let code = brandCode(a.report.callsign) {
+                counts[code, default: 0] += 1
+            } else {
+                privateCount += 1
+            }
         }
         airlineAssigner.update(counts: counts)
         if airlineSlots != airlineAssigner.assignments { airlineSlots = airlineAssigner.assignments }
+        liveryAssigner.update(counts: counts)
 
-        let assigned = airlineSlots.keys.sorted { (counts[$0] ?? 0) > (counts[$1] ?? 0) }
-        let otherCount = counts.filter { airlineSlots[$0.key] == nil }.values.reduce(0, +)
+        // The key lists the busiest airlines that have a colour; everyone else is "other".
+        let byCount = { (a: String, b: String) in (counts[a] ?? 0) != (counts[b] ?? 0) ? (counts[a] ?? 0) > (counts[b] ?? 0) : a < b }
+        let assigned: [String] = settings.liveryColors
+            ? Array(counts.keys.filter { liveryAssigner.color($0) != nil }.sorted(by: byCount).prefix(Self.liveryLegendRows))
+            : airlineSlots.keys.sorted(by: byCount)
+        let listed = Set(assigned)
+        let otherCount = counts.filter { !listed.contains($0.key) }.values.reduce(0, +)
         airlineLegend = AirlineLegend(
-            entries: assigned.map { .init(code: $0, slot: airlineSlots[$0]!, count: counts[$0] ?? 0) },
+            entries: assigned.map { .init(code: $0, count: counts[$0] ?? 0) },
             otherAirlines: otherCount, privateAircraft: privateCount)
 
         for code in assigned where airlineNames[code] == nil {
@@ -370,6 +463,27 @@ final class AppModel {
         }
     }
 
+    // MARK: Daily tally
+
+    static let tallyKey = "airspace.tally.v1"
+
+    private static func loadTally() -> DailyTally {
+        guard let data = UserDefaults.standard.data(forKey: tallyKey),
+              let t = try? JSONDecoder().decode(DailyTally.self, from: data) else { return DailyTally() }
+        return t
+    }
+
+    private func updateTally(_ inView: [DisplayAircraft]) {
+        let now = Date()
+        guard tally.record(inView.map(\.id), on: now) else { return }
+        aircraftToday = tally.count
+        // A wallpaper restarts at login; persist so the count survives, but not on every poll.
+        if persistsTally, now.timeIntervalSince(tallySavedAt) > 60, let data = try? JSONEncoder().encode(tally) {
+            UserDefaults.standard.set(data, forKey: Self.tallyKey)
+            tallySavedAt = now
+        }
+    }
+
     private func updateDerivedTraffic(center: Coordinate) {
         let now = Date().timeIntervalSince1970
         let bounds = Projection(center: center, size: primaryScreenSize, radiusNM: settings.radiusNM).visibleBounds
@@ -377,6 +491,14 @@ final class AppModel {
         let inView = visible.filter { bounds.contains($0.position) }
         aircraftInView = inView.count
         updateAirlines(inView)
+        updateTally(inView)
+
+        let newAlerts = inView.compactMap { a -> AlertFlight? in
+            guard let alert = a.report.alert else { return nil }
+            return AlertFlight(hex: a.id, name: AircraftRenderer.displayName(a.report), alert: alert, squawk: a.report.squawk,
+                               distanceNM: Geo.distanceNM(center, a.position), bearingDeg: Geo.bearingDeg(from: center, to: a.position))
+        }.sorted { $0.distanceNM < $1.distanceNM }
+        if newAlerts != alerts { alerts = newAlerts }
 
         let nearest = visible.min { Geo.distanceNM($0.position, center) < Geo.distanceNM($1.position, center) }
         guard let nearest else { overhead = nil; return }

@@ -489,6 +489,14 @@ struct AircraftSettings: View {
                 Divider()
                 AltitudeKey(palette: palette)
             }
+            if model.settings.colorMode == .airline {
+                Toggle("Paint planes in their airline's livery colors", isOn: $model.settings.liveryColors)
+                if model.settings.liveryColors && model.settings.glyph == .silhouette {
+                    Toggle("Full livery: body, tail and engines in their own colors", isOn: $model.settings.fullLivery)
+                        .padding(.leading, 20)
+                }
+                Toggle("Group regional airlines with the airline they fly for", isOn: $model.settings.groupRegionals)
+            }
         }
 
         SettingsGroup(title: "Labels & trails") {
@@ -532,7 +540,9 @@ struct AircraftSettings: View {
 
     private var footer: String {
         switch model.settings.colorMode {
-        case .airline: "The four busiest airlines on screen each get a color; others stay neutral. The info corner shows the key."
+        case .airline where model.settings.liveryColors:
+            "Each airline flies in its livery color, brightened or deepened to read on the map. When two busy airlines share a color (United and American blue), the smaller one switches to its second livery color. Grouped, a PSA or Envoy flight counts as American, and SkyWest counts as the airline whose flight number it flies."
+        case .airline: "The four busiest airlines on screen each get a color; others stay neutral. The info corner shows the key. Grouped, a PSA or Envoy flight counts as American, and SkyWest counts as the airline whose flight number it flies."
         case .altitude: "Warm near the ground, cool at cruise. Trails show the altitude flown along the way."
         case .monochrome: "Every aircraft in one color."
         }
@@ -540,6 +550,8 @@ struct AircraftSettings: View {
 
     private func sample(_ mode: ColorMode, _ p: Palette) -> [RGBA] {
         switch mode {
+        case .airline where model.settings.liveryColors:
+            ["UAL", "DAL", "NKS"].compactMap { Liveries.livery($0).map { p.livery($0.primary) } }
         case .airline: [p.airlineColors[0], p.airlineColors[2], p.airlineColors[3]]
         case .altitude: [p.altitudeColors[0], p.altitudeColors[2], p.altitudeColors[4]]
         case .monochrome: [p.monochrome]

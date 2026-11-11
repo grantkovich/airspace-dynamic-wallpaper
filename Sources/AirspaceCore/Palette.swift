@@ -28,6 +28,16 @@ public struct Palette: Hashable, Sendable {
     public var airlineColors: [RGBA]
     /// Airlines without a slot, and aircraft that aren't airline flights.
     public var otherAirline, privateAircraft: RGBA
+    /// Emergency squawks. Reserved for alerts so it never means anything else.
+    public var alert: RGBA
+    /// OKLab lightness band airline liveries are moved into, so navy reads on Night and
+    /// yellow reads on Aluminum.
+    public var liveryLightness: ClosedRange<Double>
+    /// Lightness band for the parts of a full-livery icon: wide, so a white crown stays white,
+    /// but dark enough paint (Air Canada's black tail) is lifted off the Night map.
+    public var liveryPartLightness: ClosedRange<Double>
+    /// Outline around full-livery icons, so a white plane holds its shape on Aluminum.
+    public var liveryOutline: RGBA
     /// Altitude ramp stops (feet → colour), ascending.
     public var altitudeStops: [Double]
     public var altitudeColors: [RGBA]
@@ -36,6 +46,14 @@ public struct Palette: Hashable, Sendable {
     public var isDark: Bool
 
     public func airlineColor(_ slot: AirlineSlot) -> RGBA { airlineColors[slot.rawValue] }
+
+    /// A livery colour moved to this surface's legible lightness band.
+    public func livery(_ c: RGBA) -> RGBA { OKLab.fit(c, lightness: liveryLightness) }
+
+    /// A full paint scheme adjusted for this surface.
+    public func livery(_ paint: LiveryPaint) -> LiveryPaint {
+        paint.map { OKLab.fit($0, lightness: liveryPartLightness) }
+    }
 
     public func altitudeColor(_ ft: Double) -> RGBA {
         guard let first = altitudeStops.first, ft > first else { return altitudeColors[0] }
@@ -56,7 +74,8 @@ public struct Palette: Hashable, Sendable {
         textPrimary: RGBA(hex: 0xECE8E1), textSecondary: RGBA(hex: 0x9A968F), textTertiary: RGBA(hex: 0x5E5C58),
         monochrome: RGBA(hex: 0xF4F1EA),
         airlineColors: [RGBA(hex: 0x3987E5), RGBA(hex: 0xC98500), RGBA(hex: 0xD55181), RGBA(hex: 0x00802A)],
-        otherAirline: RGBA(hex: 0xA9A59D), privateAircraft: RGBA(hex: 0x6C6A66),
+        otherAirline: RGBA(hex: 0xA9A59D), privateAircraft: RGBA(hex: 0x6C6A66), alert: RGBA(hex: 0xFF4B3E),
+        liveryLightness: 0.62...0.82, liveryPartLightness: 0.45...1, liveryOutline: RGBA(hex: 0x0B0C0E, alpha: 0.9),
         altitudeStops: stops,
         altitudeColors: [RGBA(hex: 0xFFB13B), RGBA(hex: 0xFF7A59), RGBA(hex: 0xE86FB8), RGBA(hex: 0x7CC8FF), RGBA(hex: 0x6F8CFF)],
         glow: 1, isDark: true)
@@ -69,7 +88,8 @@ public struct Palette: Hashable, Sendable {
         textPrimary: RGBA(hex: 0x1C1D1F), textSecondary: RGBA(hex: 0x6A6863), textTertiary: RGBA(hex: 0xA19E98),
         monochrome: RGBA(hex: 0x26272A),
         airlineColors: [RGBA(hex: 0x2A78D6), RGBA(hex: 0xB87600), RGBA(hex: 0xC4457A), RGBA(hex: 0x005F00)],
-        otherAirline: RGBA(hex: 0x6F6C66), privateAircraft: RGBA(hex: 0xA6A39C),
+        otherAirline: RGBA(hex: 0x6F6C66), privateAircraft: RGBA(hex: 0xA6A39C), alert: RGBA(hex: 0xD42A1E),
+        liveryLightness: 0.40...0.62, liveryPartLightness: 0...1, liveryOutline: RGBA(hex: 0x55534F, alpha: 0.85),
         altitudeStops: stops,
         altitudeColors: [RGBA(hex: 0xD98200), RGBA(hex: 0xE0502E), RGBA(hex: 0xB83F8C), RGBA(hex: 0x1E86C8), RGBA(hex: 0x3A55D9)],
         glow: 0.25, isDark: false)
@@ -86,7 +106,12 @@ public struct Palette: Hashable, Sendable {
             textPrimary: m(\.textPrimary), textSecondary: m(\.textSecondary), textTertiary: m(\.textTertiary),
             monochrome: m(\.monochrome),
             airlineColors: zip(a.airlineColors, b.airlineColors).map { RGBA.mix($0, $1, t) },
-            otherAirline: m(\.otherAirline), privateAircraft: m(\.privateAircraft),
+            otherAirline: m(\.otherAirline), privateAircraft: m(\.privateAircraft), alert: m(\.alert),
+            liveryLightness: (a.liveryLightness.lowerBound + (b.liveryLightness.lowerBound - a.liveryLightness.lowerBound) * t)
+                ... (a.liveryLightness.upperBound + (b.liveryLightness.upperBound - a.liveryLightness.upperBound) * t),
+            liveryPartLightness: (a.liveryPartLightness.lowerBound + (b.liveryPartLightness.lowerBound - a.liveryPartLightness.lowerBound) * t)
+                ... (a.liveryPartLightness.upperBound + (b.liveryPartLightness.upperBound - a.liveryPartLightness.upperBound) * t),
+            liveryOutline: m(\.liveryOutline),
             altitudeStops: a.altitudeStops,
             altitudeColors: zip(a.altitudeColors, b.altitudeColors).map { RGBA.mix($0, $1, t) },
             glow: a.glow + (b.glow - a.glow) * t, isDark: t < 0.5 ? a.isDark : b.isDark)

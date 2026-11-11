@@ -78,7 +78,9 @@ struct TrafficStack: View {
                               palette: palette,
                               infoRect: model.settings.infoEnabled
                                   ? InfoCorner.footprint(corner: model.settings.infoCorner, size: size, insets: insets,
-                                                         legendRows: InfoCorner.legendRows(model)) : nil,
+                                                         legendRows: InfoCorner.legendRows(model),
+                                                         alertRows: model.alerts.count,
+                                                         showsRoute: InfoCorner.showsRoute(model)) : nil,
                               shared: shared)
             }
         }

@@ -18,13 +18,17 @@ public struct AircraftReport: Hashable, Sendable {
     public var trackDeg: Double?
     public var verticalRateFpm: Double?
     public var squawk: String?
+    /// Emergency squawk or ADS-B emergency status, if any.
+    public var alert: AircraftAlert?
+    /// Flagged as military in the aggregator's aircraft database.
+    public var isMilitary: Bool
     /// Local epoch seconds when this position was observed.
     public var fixTime: TimeInterval
 
     public init(hex: String, callsign: String? = nil, registration: String? = nil, typeCode: String? = nil,
                 category: String? = nil, position: Coordinate, altitudeFt: Double, onGround: Bool = false,
                 groundSpeedKt: Double? = nil, trackDeg: Double? = nil, verticalRateFpm: Double? = nil,
-                squawk: String? = nil, fixTime: TimeInterval) {
+                squawk: String? = nil, alert: AircraftAlert? = nil, isMilitary: Bool = false, fixTime: TimeInterval) {
         self.hex = hex
         self.callsign = callsign
         self.registration = registration
@@ -37,6 +41,8 @@ public struct AircraftReport: Hashable, Sendable {
         self.trackDeg = trackDeg
         self.verticalRateFpm = verticalRateFpm
         self.squawk = squawk
+        self.alert = alert
+        self.isMilitary = isMilitary
         self.fixTime = fixTime
     }
 }
@@ -96,17 +102,89 @@ public enum AircraftClass: String, Sendable, CaseIterable {
     }
 }
 
+/// One end of a route.
+public struct RouteAirport: Hashable, Sendable {
+    /// IATA code where there is one ("ORD"), else ICAO ("KORD").
+    public var code: String
+    /// City or municipality ("Chicago").
+    public var city: String?
+    /// Full airport name ("Chicago O'Hare International Airport").
+    public var name: String?
+    public var coordinate: Coordinate?
+
+    public init(code: String, city: String? = nil, name: String? = nil, coordinate: Coordinate? = nil) {
+        self.code = code
+        self.city = city
+        self.name = name
+        self.coordinate = coordinate
+    }
+}
+
 /// Route and airframe details for the info corner. All optional: lookups often miss.
 public struct FlightDetails: Hashable, Sendable {
-    public var origin: String?
-    public var destination: String?
+    public var origin: RouteAirport?
+    public var destination: RouteAirport?
     public var airline: String?
     public var aircraftDescription: String?
 
-    public init(origin: String? = nil, destination: String? = nil, airline: String? = nil, aircraftDescription: String? = nil) {
+    public init(origin: RouteAirport? = nil, destination: RouteAirport? = nil, airline: String? = nil, aircraftDescription: String? = nil) {
         self.origin = origin
         self.destination = destination
         self.airline = airline
         self.aircraftDescription = aircraftDescription
+    }
+}
+
+/// How far along its route a flight is. Route databases go stale (flight numbers get reused),
+/// so a position well off the route between the two airports yields nil rather than a wrong answer.
+public struct RouteProgress: Hashable, Sendable {
+    /// 0 at the origin, 1 at the destination.
+    public var fraction: Double
+    public var flownNM: Double
+    public var remainingNM: Double
+
+    public init?(origin: Coordinate, destination: Coordinate, position: Coordinate) {
+        let total = Geo.distanceNM(origin, destination)
+        let flown = Geo.distanceNM(origin, position)
+        let remaining = Geo.distanceNM(position, destination)
+        guard total > 1 else { return nil }
+        // On the route the two legs sum to the total; allow for vectoring, holds and departures.
+        guard flown + remaining <= total * 1.25 + 60 else { return nil }
+        self.fraction = min(1, max(0, flown / (flown + remaining)))
+        self.flownNM = flown
+        self.remainingNM = remaining
+    }
+}
+
+/// Something worth calling out: an emergency squawk or emergency status.
+public enum AircraftAlert: String, Hashable, Sendable {
+    case emergency, radioFailure, hijack, medical, minimumFuel
+
+    /// Reserved transponder codes, then the ADS-B emergency status field.
+    public static func from(squawk: String?, emergencyStatus: String?) -> AircraftAlert? {
+        switch squawk {
+        case "7700": return .emergency
+        case "7600": return .radioFailure
+        case "7500": return .hijack
+        default: break
+        }
+        switch emergencyStatus?.lowercased() {
+        case "general", "downed": return .emergency
+        case "nordo": return .radioFailure
+        case "unlawful": return .hijack
+        case "lifeguard": return .medical
+        case "minfuel": return .minimumFuel
+        default: return nil
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .emergency: "Emergency"
+        case .radioFailure: "Radio failure"
+        case .hijack: "Unlawful interference"
+        case .medical: "Medical flight"
+        case .minimumFuel: "Minimum fuel"
+        }
     }
 }

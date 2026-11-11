@@ -42,6 +42,64 @@ public enum Geo {
     }
 }
 
+extension Geo {
+    /// Initial great-circle bearing from `a` to `b`, 0…360 degrees clockwise from north.
+    public static func bearingDeg(from a: Coordinate, to b: Coordinate) -> Double {
+        let φ1 = a.latitude.radians, φ2 = b.latitude.radians, dλ = (b.longitude - a.longitude).radians
+        let y = sin(dλ) * cos(φ2)
+        let x = cos(φ1) * sin(φ2) - sin(φ1) * cos(φ2) * cos(dλ)
+        let θ = atan2(y, x).degrees
+        return θ < 0 ? θ + 360 : θ
+    }
+
+    /// Eight-point compass direction for a bearing: "N", "NE", …
+    public static func compassPoint(_ bearingDeg: Double) -> String {
+        let points = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let i = Int(((bearingDeg.truncatingRemainder(dividingBy: 360) + 360 + 22.5) / 45).rounded(.down)) % 8
+        return points[i]
+    }
+
+    /// Point a fraction `f` of the way along the great circle from `a` to `b`.
+    public static func intermediate(_ a: Coordinate, _ b: Coordinate, fraction f: Double) -> Coordinate {
+        let d = distanceNM(a, b) / earthRadiusNM
+        guard d > 1e-9 else { return a }
+        let φ1 = a.latitude.radians, λ1 = a.longitude.radians, φ2 = b.latitude.radians, λ2 = b.longitude.radians
+        let A = sin((1 - f) * d) / sin(d), B = sin(f * d) / sin(d)
+        let x = A * cos(φ1) * cos(λ1) + B * cos(φ2) * cos(λ2)
+        let y = A * cos(φ1) * sin(λ1) + B * cos(φ2) * sin(λ2)
+        let z = A * sin(φ1) + B * sin(φ2)
+        return Coordinate(latitude: atan2(z, sqrt(x * x + y * y)).degrees, longitude: atan2(y, x).degrees)
+    }
+}
+
+/// Distinct aircraft seen today. Resets at local midnight.
+public struct DailyTally: Codable, Hashable, Sendable {
+    public private(set) var day: String
+    public private(set) var seen: Set<String>
+
+    public init(day: String = "", seen: Set<String> = []) {
+        self.day = day
+        self.seen = seen
+    }
+
+    public var count: Int { seen.count }
+
+    /// Adds `ids`, starting over if `date` falls on a new day. Returns true if anything changed.
+    @discardableResult
+    public mutating func record<S: Sequence>(_ ids: S, on date: Date, calendar: Calendar = .current) -> Bool where S.Element == String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        let key = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        var changed = false
+        if key != day {
+            day = key
+            seen = []
+            changed = true
+        }
+        for id in ids where seen.insert(id).inserted { changed = true }
+        return changed
+    }
+}
+
 extension Double {
     @inlinable var radians: Double { self * .pi / 180 }
     @inlinable var degrees: Double { self * 180 / .pi }

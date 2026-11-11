@@ -5,6 +5,8 @@ VERSION    ?= 1.0.0
 BUILD_DIR  := build
 APP        := $(BUILD_DIR)/$(APP_NAME).app
 CONFIG     ?= release
+INSTALL_DIR ?= /Applications
+LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
 # Command Line Tools ship Swift Testing outside the default search paths.
 DEV_DIR    := $(shell xcode-select -p)
@@ -16,7 +18,7 @@ TEST_FLAGS := $(if $(TEST_FW),-Xswiftc -F$(TEST_FW) -Xlinker -F$(TEST_FW) -Xlink
 SIGN_ID    ?= -
 ENTITLEMENTS := Resources/Airspace.entitlements
 
-.PHONY: build test app run release dmg clean geodata snapshots icon
+.PHONY: build test app run install release dmg clean geodata snapshots icon
 
 build:
 	swift build -c $(CONFIG)
@@ -36,6 +38,22 @@ app: build
 
 run: app
 	open $(APP)
+
+# Build, then replace the copy in /Applications and relaunch it. Quitting (rather than
+# killing) lets Airspace restore your own system wallpaper before the new copy takes over.
+install: app
+	@if pgrep -x $(APP_NAME) >/dev/null; then \
+	  echo "Quitting running $(APP_NAME)…"; \
+	  osascript -e 'tell application id "$(BUNDLE_ID)" to quit' >/dev/null 2>&1 || true; \
+	  for i in $$(seq 1 40); do pgrep -x $(APP_NAME) >/dev/null || break; sleep 0.25; done; \
+	  if pgrep -x $(APP_NAME) >/dev/null; then echo "$(APP_NAME) didn't quit; close it and try again"; exit 1; fi; \
+	fi
+	rm -rf "$(INSTALL_DIR)/$(APP_NAME).app"
+	ditto $(APP) "$(INSTALL_DIR)/$(APP_NAME).app"
+	codesign --verify --deep --strict "$(INSTALL_DIR)/$(APP_NAME).app"
+	$(LSREGISTER) -f "$(INSTALL_DIR)/$(APP_NAME).app"
+	open "$(INSTALL_DIR)/$(APP_NAME).app"
+	@echo "Installed and launched $(INSTALL_DIR)/$(APP_NAME).app"
 
 # Developer ID build + notarization:
 #   make release SIGN_ID="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=airspace

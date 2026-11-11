@@ -30,6 +30,7 @@ enum Snapshots {
             ("field-aluminum-nolabels", { $0.appearance = .light; $0.mapStyle = .pureField; $0.labelMode = .off }),
             ("schematic-night-zoom10", { $0.appearance = .dark; $0.zoomMiles = 10 }),
             ("schematic-night-zoom120", { $0.appearance = .dark; $0.zoomMiles = 120 }),
+            ("schematic-night-emergency", { $0.appearance = .dark }),
         ]
         renderGlyphSpecimen(dir: dir)
         renderAppleMap(center: center, name: name, geo: geo, reports: reports, size: size, dir: dir)
@@ -45,8 +46,21 @@ enum Snapshots {
             model.primaryScreenSize = size
             model.largestScreenSize = size
             let now = Date().timeIntervalSince1970
+            var reports = reports
+            if file.hasSuffix("emergency") {
+                // Stage a 7700 on an airliner a few miles out, to review the alert styling.
+                if let i = reports.firstIndex(where: { !$0.onGround && $0.callsign?.count ?? 0 > 4
+                    && (6...20).contains(Geo.distanceNM($0.position, center)) }) {
+                    reports[i].squawk = "7700"
+                    reports[i].alert = .emergency
+                }
+            }
             model.stage(center: center, name: name, geo: geo, reports: reports, now: now,
-                        details: FlightDetails(origin: "ORD", destination: "LGA", airline: "United Airlines"))
+                        details: FlightDetails(
+                            origin: RouteAirport(code: "ORD", city: "Chicago",
+                                                 coordinate: Coordinate(latitude: 41.9786, longitude: -87.9048)),
+                            destination: RouteAirport(code: "LGA", city: "New York",
+                                                      coordinate: Coordinate(latitude: 40.7772, longitude: -73.8726))))
             let view = AirspaceView(model: model, size: size, insets: EdgeInsets(top: 33, leading: 0, bottom: 70, trailing: 0))
                 .environment(\.renderSynchronously, true)
             let renderer = ImageRenderer(content: view)
@@ -149,10 +163,17 @@ enum Snapshots {
     /// Times one frame of the animated layer (aircraft, trails, labels) rendered offscreen.
     /// ImageRenderer rasterizes on the CPU, so this is an upper bound on per-frame cost.
     static func benchmark(center: Coordinate, geo: GeoData?, reports: [AircraftReport], size: CGSize) {
-        for (name, labels, trails) in [("full", LabelMode.callsign, 3.0), ("no labels", .off, 3), ("no labels/trails", .off, 0)] {
+        let cases: [(String, LabelMode, Double, Double)] = [
+            ("full", .callsign, 3, 35), ("full, solid colours", .callsign, 3, 35),
+            ("no labels", .off, 3, 35), ("no labels/trails", .off, 0, 35),
+            ("stress: 150 mi, 10 min trails, full labels", .callsignTypeAltitude, 10, 150),
+        ]
+        for (name, labels, trails, zoom) in cases {
             var s = WallpaperSettings()
             s.labelMode = labels
             s.trailMinutes = trails
+            s.zoomMiles = zoom
+            s.fullLivery = !name.contains("solid")
             let model = AppModel(settings: s, startServices: false)
             model.primaryScreenSize = size
             model.stage(center: center, name: "Bench", geo: geo, reports: reports, now: Date().timeIntervalSince1970)
@@ -169,6 +190,38 @@ enum Snapshots {
             let ms = Date().timeIntervalSince(start) / Double(n) * 1000
             print(String(format: "%@: %.1f ms/frame (%d aircraft drawn)", name, ms, Diagnostics.aircraftDrawn))
         }
+        benchmarkComponents(center: center, reports: reports, size: size)
+    }
+
+    /// The per-frame CPU work that the full-frame numbers above can't isolate (the renderer is
+    /// rebuilt each iteration there, so its caches never warm up): trail projection, cold vs
+    /// cached, and label placement for every aircraft at wide zoom.
+    static func benchmarkComponents(center: Coordinate, reports: [AircraftReport], size: CGSize) {
+        var s = WallpaperSettings()
+        s.zoomMiles = 150
+        s.trailMinutes = 10
+        let model = AppModel(settings: s, startServices: false)
+        model.stage(center: center, name: "Bench", geo: nil, reports: reports, now: Date().timeIntervalSince1970)
+        let projection = Projection(center: center, size: size, radiusNM: s.radiusNM)
+        let aircraft = model.tracker.snapshot(at: Date().timeIntervalSince1970)
+        let points = aircraft.reduce(0) { $0 + $1.trail.count }
+        func time(_ n: Int, _ body: () -> Void) -> Double {
+            let start = Date()
+            for _ in 0..<n { body() }
+            return Date().timeIntervalSince(start) / Double(n) * 1000
+        }
+        let cold = time(50) { for a in aircraft { _ = a.trail.map { projection.point($0.position) } } }
+        let cache = TrailProjectionCache()
+        let warm = time(50) { cache.beginFrame(); for a in aircraft { _ = cache.points(for: a, projection: projection) } }
+        print(String(format: "trail projection, %d aircraft / %d points: %.2f ms uncached, %.3f ms cached", aircraft.count, points, cold, warm))
+
+        let requests = aircraft.map { a in
+            LabelRequest(id: a.id, anchor: projection.point(a.position), size: CGSize(width: 64, height: 12),
+                         priority: a.report.altitudeFt, gap: 13)
+        }
+        let bounds = CGRect(origin: .zero, size: size)
+        let layout = time(50) { _ = LabelLayout.layout(requests, obstacles: [], bounds: bounds, previous: [:], glyphRadius: 5) }
+        print(String(format: "label layout, %d labels: %.2f ms", requests.count, layout))
     }
 
     private static func value(after flag: String, in args: [String]) -> String? {

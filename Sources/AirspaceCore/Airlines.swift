@@ -3,6 +3,24 @@ import Foundation
 /// The four airline colour slots. Order matters only for tie-breaking.
 public enum AirlineSlot: Int, CaseIterable, Codable, Sendable { case blue, amber, magenta, green }
 
+/// Who flies a flight and whose brand it is sold under.
+public struct AirlineIdentity: Hashable, Sendable {
+    /// Callsign prefix of the company operating the aircraft ("JIA" for PSA).
+    public var operatorCode: String
+    /// The airline the flight is marketed as ("AAL"); equals `operatorCode` for mainline flights.
+    public var brandCode: String
+    /// Marketing program for regional flying ("American Eagle"); nil for mainline flights.
+    public var program: String?
+
+    public init(operatorCode: String, brandCode: String, program: String? = nil) {
+        self.operatorCode = operatorCode
+        self.brandCode = brandCode
+        self.program = program
+    }
+
+    public var isRegional: Bool { operatorCode != brandCode }
+}
+
 public enum Airlines {
     /// ICAO airline designator from a callsign: three letters followed by a flight number.
     /// Registrations (N456ER, C-GABC) and anything else return nil.
@@ -22,7 +40,7 @@ public enum Airlines {
 
     /// Short names and brand-hue preferences for common carriers. Anything else is named via adsbdb.
     static let known: [String: Known] = [
-        "UAL": .init(name: "United", slot: .blue), "AAL": .init(name: "American", slot: .blue),
+        "UAL": .init(name: "United", slot: .blue), "AAL": .init(name: "American", slot: .magenta),
         "DAL": .init(name: "Delta", slot: .magenta), "SWA": .init(name: "Southwest", slot: .amber),
         "ASA": .init(name: "Alaska", slot: .blue), "JBU": .init(name: "JetBlue", slot: .blue),
         "NKS": .init(name: "Spirit", slot: .amber), "FFT": .init(name: "Frontier", slot: .green),
@@ -33,7 +51,7 @@ public enum Airlines {
         "JIA": .init(name: "PSA", slot: .blue), "PDT": .init(name: "Piedmont", slot: .blue),
         "ASH": .init(name: "Mesa", slot: .blue), "QXE": .init(name: "Horizon", slot: .blue),
         "GJS": .init(name: "GoJet", slot: .green), "AWI": .init(name: "Air Wisconsin", slot: .green),
-        "CPZ": .init(name: "Compass", slot: .magenta), "LYM": .init(name: "Key Lime", slot: .green),
+        "LYM": .init(name: "Key Lime", slot: .green),
         "FDX": .init(name: "FedEx", slot: .magenta), "UPS": .init(name: "UPS", slot: .amber),
         "GTI": .init(name: "Atlas", slot: .blue), "ABX": .init(name: "ABX Air", slot: .green),
         "ACA": .init(name: "Air Canada", slot: .magenta), "WJA": .init(name: "WestJet", slot: .green),
@@ -54,11 +72,97 @@ public enum Airlines {
         "QFA": .init(name: "Qantas", slot: .magenta), "ANZ": .init(name: "Air New Zealand", slot: .green),
         "CCA": .init(name: "Air China", slot: .magenta), "CES": .init(name: "China Eastern", slot: .blue),
         "CSN": .init(name: "China Southern", slot: .blue), "AIC": .init(name: "Air India", slot: .magenta),
+        "UCA": .init(name: "CommuteAir", slot: .blue), "ROU": .init(name: "Air Canada Rouge", slot: .magenta),
+        "WEN": .init(name: "WestJet Encore", slot: .green), "SLI": .init(name: "Aeroméxico Connect", slot: .blue),
+        "CLH": .init(name: "Lufthansa CityLine", slot: .amber), "KLC": .init(name: "KLM Cityhopper", slot: .blue),
+        "HOP": .init(name: "HOP!", slot: .blue), "CFE": .init(name: "BA CityFlyer", slot: .blue),
+        "IBS": .init(name: "Iberia Express", slot: .magenta), "ANE": .init(name: "Air Nostrum", slot: .magenta),
+        "QLK": .init(name: "QantasLink", slot: .magenta),
         "EJA": .init(name: "NetJets", slot: .amber), "LXJ": .init(name: "Flexjet", slot: .blue),
         "XOJ": .init(name: "XO", slot: .blue), "JRE": .init(name: "JetSuite", slot: .blue),
     ]
 
     public static func displayName(_ code: String) -> String? { known[code]?.name }
+
+    // MARK: Regional carriers
+
+    /// Who a regional flight is sold as: an exclusive partner, or (for carriers that fly for
+    /// several mainlines) a partner chosen by flight-number block.
+    enum Partner {
+        case exclusive(String, program: String)
+        case byFlightNumber([(range: ClosedRange<Int>, brand: String, program: String)])
+    }
+
+    /// Regional and subsidiary airlines that fly under a larger airline's brand. Their callsigns
+    /// use the operator's own prefix (PSA flies "JIA5501" as American Eagle 5501).
+    static let partners: [String: Partner] = [
+        // American Eagle
+        "ENY": .exclusive("AAL", program: "American Eagle"),
+        "JIA": .exclusive("AAL", program: "American Eagle"),
+        "PDT": .exclusive("AAL", program: "American Eagle"),
+        // Delta Connection
+        "EDV": .exclusive("DAL", program: "Delta Connection"),
+        // United Express
+        "ASH": .exclusive("UAL", program: "United Express"),
+        "GJS": .exclusive("UAL", program: "United Express"),
+        "UCA": .exclusive("UAL", program: "United Express"),
+        // Alaska
+        "QXE": .exclusive("ASA", program: "Alaska"),
+        // Canada
+        "JZA": .exclusive("ACA", program: "Air Canada Express"),
+        "ROU": .exclusive("ACA", program: "Air Canada Rouge"),
+        "WEN": .exclusive("WJA", program: "WestJet Encore"),
+        // Mexico, Europe, Oceania
+        "SLI": .exclusive("AMX", program: "Aeroméxico Connect"),
+        "CLH": .exclusive("DLH", program: "Lufthansa CityLine"),
+        "KLC": .exclusive("KLM", program: "KLM Cityhopper"),
+        "HOP": .exclusive("AFR", program: "Air France HOP"),
+        "CFE": .exclusive("BAW", program: "BA CityFlyer"),
+        "IBS": .exclusive("IBE", program: "Iberia Express"),
+        "ANE": .exclusive("IBE", program: "Iberia Regional"),
+        "QLK": .exclusive("QFA", program: "QantasLink"),
+        // SkyWest and Republic fly for several airlines under the partner's flight numbers.
+        // Blocks checked against live adsbdb routes (Nov 2026): SKW 29xx–32xx at AA hubs,
+        // 35xx–43xx at DL hubs, 46xx–69xx at UA hubs. Numbers outside a block stay SkyWest.
+        "SKW": .byFlightNumber([
+            (2900...3299, "AAL", "American Eagle"),
+            (3400...3499, "ASA", "Alaska"),
+            (3500...4499, "DAL", "Delta Connection"),
+            (4500...6999, "UAL", "United Express"),
+        ]),
+        "RPA": .byFlightNumber([
+            (3300...3799, "UAL", "United Express"),
+            (4000...4999, "AAL", "American Eagle"),
+            (5000...6999, "DAL", "Delta Connection"),
+        ]),
+    ]
+
+    /// Operator, brand and program for an airline callsign. With `groupRegionals` off, every
+    /// flight is its own operator's brand.
+    public static func identity(fromCallsign callsign: String?, groupRegionals: Bool = true) -> AirlineIdentity? {
+        guard let op = code(fromCallsign: callsign) else { return nil }
+        guard groupRegionals, let partner = partners[op] else { return AirlineIdentity(operatorCode: op, brandCode: op) }
+        switch partner {
+        case let .exclusive(brand, program):
+            return AirlineIdentity(operatorCode: op, brandCode: brand, program: program)
+        case let .byFlightNumber(blocks):
+            if let n = flightNumber(callsign), let block = blocks.first(where: { $0.range.contains(n) }) {
+                return AirlineIdentity(operatorCode: op, brandCode: block.brand, program: block.program)
+            }
+            return AirlineIdentity(operatorCode: op, brandCode: op)
+        }
+    }
+
+    /// The airline a flight is coloured and counted as.
+    public static func brandCode(fromCallsign callsign: String?, groupRegionals: Bool = true) -> String? {
+        identity(fromCallsign: callsign, groupRegionals: groupRegionals)?.brandCode
+    }
+
+    /// "SKW5375" → 5375, "SKW118R" → 118.
+    static func flightNumber(_ callsign: String?) -> Int? {
+        guard let cs = callsign, cs.count > 3 else { return nil }
+        return Int(cs.dropFirst(3).prefix(while: \.isNumber))
+    }
     static func preferredSlot(_ code: String) -> AirlineSlot? { known[code]?.slot }
 
     /// "SkyWest Airlines" → "SkyWest". Keeps names where the suffix is the identity ("British Airways").

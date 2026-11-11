@@ -20,13 +20,25 @@ clicks, and idles when it's covered, locked, or on battery.
 - **Zoom:** 5–150 mile radius, with range rings and a compass.
 - **Aircraft:** plane icons by airframe (narrow-body, wide-body, four-engine, rear-engine
   jets, turboprops, light aircraft, helicopters), or points of light, or arrows.
-- **Color by airline** (default): the four busiest airlines on screen each get a color,
-  with a key in the info corner. Alternatively color by altitude (trails show the altitude
-  flown along the way) or use one color for everything.
+- **Color by airline** (default): plane icons are painted in their airline's livery, part
+  by part: body, tail and tailplanes, and engines (a white United with a blue tail and
+  engines, a silver American with its flag tail, a blue-and-yellow Southwest). Trails, dots
+  and arrows use the airline's signature color (United blue, Spirit yellow, FedEx purple…),
+  shifted lighter or darker so it reads on the Night and Aluminum maps. When two airlines in view share a color, one with a second
+  livery color switches to it (beside United blue, American goes red). The key in the info
+  corner lists the six busiest. Turn liveries off for four maximally distinct colors instead.
+  Regional flights count as the airline they fly for: PSA, Envoy and Piedmont as American,
+  Endeavor as Delta, GoJet/Mesa/CommuteAir as United, and SkyWest and Republic by the
+  partner whose flight-number block they're flying. Alternatively color by altitude (trails
+  show the altitude flown along the way) or use one color for everything.
 - **Labels and trails:** labels show callsign, type and/or altitude and are placed so they
   don't collide. Trails fade over 1, 3 or 10 minutes, with a pulse on each update.
-- **Info corner:** place name, time, number of aircraft in view, the airline key, and the
-  nearest flight with its type, altitude, speed, route and airline.
+- **Info corner:** place name, time, aircraft in view and seen today, the airline key, and the
+  nearest flight: who flies it ("American Eagle · PSA"), both airports with their cities, a
+  progress line from origin to destination, distance and direction from you, climbing or
+  descending, and miles to go. Its remaining route is drawn on the map as a dashed great circle.
+- **Emergencies:** aircraft squawking 7700/7600/7500 (or reporting emergency status) get a
+  pulsing red ring and label, and are listed in the info corner even when labels are off.
 - **Menu bar match:** macOS tints the menu bar, Mission Control and Show Desktop from the
   *system* wallpaper, so Airspace sets the system wallpaper to a still of the map for each
   display. Your own wallpaper is restored when Airspace quits or the option is turned off.
@@ -41,6 +53,7 @@ You only need the Swift toolchain. Xcode isn't required; the Command Line Tools 
 
 ```sh
 make run         # build, bundle into build/Airspace.app (ad-hoc signed), launch
+make install     # build, replace /Applications/Airspace.app, relaunch it
 make test        # unit tests (Swift Testing)
 make snapshots   # render every style/appearance with live traffic into build/snapshots
 swift run -c release Airspace --render-settings build/settings   # Settings window, every section
@@ -75,7 +88,9 @@ Tools/                 geodata preprocessor (Natural Earth + OurAirports → Res
 
 - **Performance:** the static map, the animated traffic and the info corner are hosted in
   separate layers, so animating aircraft never repaints the map. Label text is cached as
-  bitmaps. The default is 20 fps; planes move a few points per second at normal zoom, so
+  bitmaps, projected trail points are cached until a new fix arrives, and label collision
+  checks use a spatial grid, so wide zoom with hundreds of aircraft stays cheap
+  (`swift run -c release Airspace --snapshots build/snapshots --benchmark`). The default is 20 fps; planes move a few points per second at normal zoom, so
   more frames add cost without smoothness.
 - **Motion:** each aircraft is projected forward from its last fix along its track. When a
   new fix arrives, the plane eases from where it was drawn to its new course over 1.2 s, so
@@ -88,8 +103,10 @@ Tools/                 geodata preprocessor (Natural Earth + OurAirports → Res
 - Live positions: [adsb.lol](https://adsb.lol), with [adsb.fi](https://adsb.fi) as automatic
   fallback. Both are free, need no key, and are fed by community ADS-B receivers.
   Coverage is best near populated areas.
-- Routes, airframes and airline names: [adsbdb.com](https://www.adsbdb.com), looked up
-  only for the nearest flight and for airlines that get a color.
+- Routes (with airport cities and positions), airframes and airline names:
+  [adsbdb.com](https://www.adsbdb.com), looked up only for the nearest flight and for
+  airlines that get a color. A route that doesn't fit the aircraft's position (stale flight
+  numbers are common) is hidden rather than shown wrong.
 - Map: [Natural Earth](https://www.naturalearthdata.com) 10m and [OurAirports](https://ourairports.com),
   both public domain. Rebuild the map data with `make geodata`.
 

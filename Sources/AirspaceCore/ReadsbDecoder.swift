@@ -34,6 +34,8 @@ public enum ReadsbDecoder {
         }
 
         let seenPos = number(a["seen_pos"]) ?? number(a["seen"]) ?? 0
+        let squawk = trimmed(a["squawk"])
+        let dbFlags = Int(number(a["dbFlags"]) ?? 0)
         return AircraftReport(
             hex: hex,
             callsign: trimmed(a["flight"]),
@@ -46,7 +48,9 @@ public enum ReadsbDecoder {
             groundSpeedKt: number(a["gs"]),
             trackDeg: number(a["track"]) ?? number(a["true_heading"]),
             verticalRateFpm: number(a["geom_rate"]) ?? number(a["baro_rate"]),
-            squawk: trimmed(a["squawk"]),
+            squawk: squawk,
+            alert: AircraftAlert.from(squawk: squawk, emergencyStatus: trimmed(a["emergency"])),
+            isMilitary: dbFlags & 1 != 0,
             fixTime: receivedAt - max(0, seenPos)
         )
     }
@@ -67,8 +71,8 @@ public enum ReadsbDecoder {
 /// Decodes adsbdb.com responses.
 public enum RouteDecoder {
     public struct Route: Hashable, Sendable {
-        public var origin: String?
-        public var destination: String?
+        public var origin: RouteAirport?
+        public var destination: RouteAirport?
         public var airline: String?
     }
 
@@ -83,12 +87,18 @@ public enum RouteDecoder {
     public static func decodeRoute(_ data: Data) throws -> Route? {
         guard let response = try responseObject(data),
               let fr = response["flightroute"] as? [String: Any] else { return nil }
-        func code(_ key: String) -> String? {
-            guard let ap = fr[key] as? [String: Any] else { return nil }
-            return (ap["iata_code"] as? String) ?? (ap["icao_code"] as? String)
+        func airport(_ key: String) -> RouteAirport? {
+            guard let ap = fr[key] as? [String: Any],
+                  let code = nonEmpty(ap["iata_code"]) ?? nonEmpty(ap["icao_code"]) else { return nil }
+            var coordinate: Coordinate?
+            if let lat = ap["latitude"] as? Double, let lon = ap["longitude"] as? Double {
+                let c = Coordinate(latitude: lat, longitude: lon)
+                if c.isValid { coordinate = c }
+            }
+            return RouteAirport(code: code, city: nonEmpty(ap["municipality"]), name: nonEmpty(ap["name"]), coordinate: coordinate)
         }
         let airline = (fr["airline"] as? [String: Any])?["name"] as? String
-        return Route(origin: code("origin"), destination: code("destination"), airline: airline)
+        return Route(origin: airport("origin"), destination: airport("destination"), airline: airline)
     }
 
     public static func decodeAircraft(_ data: Data) throws -> Airframe? {
@@ -101,6 +111,11 @@ public enum RouteDecoder {
     public static func decodeAirlineName(_ data: Data) throws -> String? {
         let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         return ((root?["response"] as? [[String: Any]])?.first?["name"]) as? String
+    }
+
+    private static func nonEmpty(_ v: Any?) -> String? {
+        guard let s = (v as? String)?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
+        return s
     }
 
     private static func responseObject(_ data: Data) throws -> [String: Any]? {

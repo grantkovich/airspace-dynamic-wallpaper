@@ -34,6 +34,12 @@ enum Format {
         ft >= 18_000 ? String(format: "FL%03d", Int((ft / 100).rounded())) : String(format: "%.1fK", ft / 1000)
     }
 
+    /// "↑" climbing, "↓" descending, "" level (under 500 ft/min either way).
+    static func trend(_ fpm: Double?) -> String {
+        guard let fpm, abs(fpm) >= 500 else { return "" }
+        return fpm > 0 ? "↑" : "↓"
+    }
+
     static func distance(miles: Double) -> String {
         miles < 10 ? String(format: "%.1f MI", miles) : String(format: "%.0f MI", miles)
     }

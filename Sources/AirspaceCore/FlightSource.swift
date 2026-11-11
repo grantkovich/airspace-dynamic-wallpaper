@@ -139,8 +139,12 @@ public actor FlightDetailsService {
         cs.range(of: #"^[A-Z]{3}\d{1,4}[A-Z]?$"#, options: .regularExpression) != nil
     }
 
+    /// The app runs for days; drop the caches rather than let them grow without bound.
+    private static let cacheLimit = 4_000
+
     private func route(_ callsign: String) async -> RouteDecoder.Route? {
         if let cached = routes[callsign] { return cached }
+        if routes.count >= Self.cacheLimit { routes.removeAll(keepingCapacity: true) }
         // Only cache real answers (including "unknown"); a network error should be retried next time.
         guard let data = try? await fetch("https://api.adsbdb.com/v0/callsign/\(callsign)") else { return nil }
         let r = (try? RouteDecoder.decodeRoute(data)) ?? nil
@@ -150,6 +154,7 @@ public actor FlightDetailsService {
 
     private func airframe(_ hex: String) async -> RouteDecoder.Airframe? {
         if let cached = airframes[hex] { return cached }
+        if airframes.count >= Self.cacheLimit { airframes.removeAll(keepingCapacity: true) }
         guard let data = try? await fetch("https://api.adsbdb.com/v0/aircraft/\(hex)") else { return nil }
         let a = (try? RouteDecoder.decodeAircraft(data)) ?? nil
         airframes[hex] = .some(a)

@@ -87,6 +87,43 @@ import Testing
         #expect(blocked.isEmpty)
     }
 
+    /// The grid must place exactly what the obvious all-pairs version places.
+    @Test(arguments: [1, 2, 3, 4, 5])
+    func gridMatchesBruteForce(seed: UInt64) {
+        var rng = SeededRandom(seed: seed)
+        let reqs = (0..<400).map { i in
+            LabelRequest(id: "a\(i)", anchor: CGPoint(x: .random(in: 0...1000, using: &rng), y: .random(in: 0...1000, using: &rng)),
+                         size: CGSize(width: .random(in: 30...90, using: &rng), height: 12),
+                         priority: .random(in: 0...1000, using: &rng))
+        }
+        let obstacles = [CGRect(x: 0, y: 700, width: 420, height: 300), CGRect(x: 488, y: 488, width: 24, height: 24)]
+        let previous = Dictionary(uniqueKeysWithValues: reqs.prefix(100).map { ($0.id, LabelSlot.allCases[Int($0.priority) % 4]) })
+        let grid = LabelLayout.layout(reqs, obstacles: obstacles, bounds: bounds, previous: previous, glyphRadius: 5)
+        let brute = bruteForce(reqs, obstacles: obstacles, previous: previous, glyphRadius: 5)
+        #expect(grid == brute)
+        #expect(grid.count > 50)
+    }
+
+    private func bruteForce(_ requests: [LabelRequest], obstacles: [CGRect], previous: [String: LabelSlot],
+                            glyphRadius: CGFloat) -> [PlacedLabel] {
+        let glyphs = requests.map { (id: $0.id, rect: CGRect(x: $0.anchor.x - glyphRadius, y: $0.anchor.y - glyphRadius,
+                                                             width: glyphRadius * 2, height: glyphRadius * 2)) }
+        var placed: [PlacedLabel] = []
+        for req in requests.sorted(by: { $0.priority < $1.priority }) {
+            var order = LabelSlot.allCases
+            if let prev = previous[req.id], let i = order.firstIndex(of: prev) { order.remove(at: i); order.insert(prev, at: 0) }
+            for slot in order {
+                let r = req.rect(slot)
+                guard bounds.contains(r), !obstacles.contains(where: { $0.intersects(r) }),
+                      !placed.contains(where: { $0.rect.intersects(r) }),
+                      !glyphs.contains(where: { $0.id != req.id && $0.rect.intersects(r) }) else { continue }
+                placed.append(PlacedLabel(id: req.id, rect: r, slot: slot))
+                break
+            }
+        }
+        return placed
+    }
+
     @Test func keepsPreviousSlotWhenFree() {
         let req = LabelRequest(id: "a", anchor: CGPoint(x: 500, y: 500), size: size, priority: 0)
         #expect(LabelLayout.layout([req], obstacles: [], bounds: bounds, previous: ["a": .below]).first?.slot == .below)
@@ -210,5 +247,100 @@ import Testing
     ] as [(String?, String?, AircraftClass)])
     func classifies(_ category: String?, _ type: String?, _ expected: AircraftClass) {
         #expect(AircraftClass.classify(category: category, typeCode: type) == expected)
+    }
+}
+
+/// Deterministic generator for reproducible randomized tests (SplitMix64).
+struct SeededRandom: RandomNumberGenerator {
+    var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+}
+
+@Suite struct RouteProgressTests {
+    let ord = Coordinate(latitude: 41.9786, longitude: -87.9048)
+    let lga = Coordinate(latitude: 40.7772, longitude: -73.8726)
+
+    @Test func midRouteIsAboutHalfway() throws {
+        let mid = Coordinate(latitude: 41.6, longitude: -80.9)
+        let p = try #require(RouteProgress(origin: ord, destination: lga, position: mid))
+        #expect(abs(p.fraction - 0.5) < 0.05)
+        #expect(abs(p.flownNM + p.remainingNM - Geo.distanceNM(ord, lga)) < 5)
+    }
+
+    @Test func endsClampAndNearbyDeparturesCount() throws {
+        #expect(try #require(RouteProgress(origin: ord, destination: lga, position: ord)).fraction == 0)
+        // Climbing out westbound before turning east: off the line but close to the airport.
+        let climbOut = Geo.offset(ord, distanceNM: 15, bearingDeg: 270)
+        #expect(RouteProgress(origin: ord, destination: lga, position: climbOut) != nil)
+    }
+
+    @Test func positionFarOffRouteMeansStaleRoute() {
+        let denver = Coordinate(latitude: 39.86, longitude: -104.67)
+        #expect(RouteProgress(origin: ord, destination: lga, position: denver) == nil)
+    }
+}
+
+@Suite struct AlertTests {
+    @Test func reservedSquawks() {
+        #expect(AircraftAlert.from(squawk: "7700", emergencyStatus: "none") == .emergency)
+        #expect(AircraftAlert.from(squawk: "7600", emergencyStatus: nil) == .radioFailure)
+        #expect(AircraftAlert.from(squawk: "7500", emergencyStatus: nil) == .hijack)
+        #expect(AircraftAlert.from(squawk: "1200", emergencyStatus: "none") == nil)
+        #expect(AircraftAlert.from(squawk: nil, emergencyStatus: nil) == nil)
+    }
+
+    @Test func emergencyStatusField() {
+        #expect(AircraftAlert.from(squawk: "4521", emergencyStatus: "lifeguard") == .medical)
+        #expect(AircraftAlert.from(squawk: "4521", emergencyStatus: "minfuel") == .minimumFuel)
+        #expect(AircraftAlert.from(squawk: "4521", emergencyStatus: "general") == .emergency)
+    }
+}
+
+@Suite struct GeoExtrasTests {
+    let ord = Coordinate(latitude: 41.9786, longitude: -87.9048)
+
+    @Test func bearingsAndCompass() {
+        #expect(abs(Geo.bearingDeg(from: ord, to: Geo.offset(ord, distanceNM: 20, bearingDeg: 90)) - 90) < 0.5)
+        #expect(abs(Geo.bearingDeg(from: ord, to: Coordinate(latitude: 43, longitude: -87.9048))) < 0.01)
+        #expect(Geo.compassPoint(0) == "N")
+        #expect(Geo.compassPoint(359) == "N")
+        #expect(Geo.compassPoint(44) == "NE")
+        #expect(Geo.compassPoint(225) == "SW")
+        #expect(Geo.compassPoint(-90) == "W")
+    }
+
+    @Test func greatCircleInterpolation() {
+        let lhr = Coordinate(latitude: 51.47, longitude: -0.4543)
+        let mid = Geo.intermediate(ord, lhr, fraction: 0.5)
+        let total = Geo.distanceNM(ord, lhr)
+        #expect(abs(Geo.distanceNM(ord, mid) - total / 2) < 1)
+        #expect(mid.latitude > 55)   // great circle bows north of both ends
+        #expect(Geo.distanceNM(Geo.intermediate(ord, lhr, fraction: 0), ord) < 0.01)
+        #expect(Geo.distanceNM(Geo.intermediate(ord, lhr, fraction: 1), lhr) < 0.01)
+    }
+}
+
+@Suite struct DailyTallyTests {
+    @Test func countsDistinctAndResetsAtMidnight() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/Chicago")!
+        let morning = cal.date(from: DateComponents(year: 2026, month: 11, day: 8, hour: 9))!
+        let night = cal.date(from: DateComponents(year: 2026, month: 11, day: 8, hour: 23, minute: 59))!
+        let tomorrow = cal.date(from: DateComponents(year: 2026, month: 11, day: 9, hour: 0, minute: 1))!
+        var t = DailyTally()
+        let first = t.record(["a", "b"], on: morning, calendar: cal)
+        let repeatSighting = t.record(["a"], on: night, calendar: cal)
+        let newSighting = t.record(["c"], on: night, calendar: cal)
+        #expect(first && !repeatSighting && newSighting)
+        #expect(t.count == 3)
+        t.record(["a"], on: tomorrow, calendar: cal)
+        #expect(t.count == 1 && t.day == "2026-11-09")
     }
 }

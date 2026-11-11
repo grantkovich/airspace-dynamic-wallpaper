@@ -12,8 +12,10 @@ struct InfoCorner: View {
     static let width: CGFloat = 420
 
     /// Approximate area the block occupies, so map labels can stay out of it.
-    static func footprint(corner: Corner, size: CGSize, insets: EdgeInsets, legendRows: Int = 0) -> CGRect {
-        let h: CGFloat = 230 + (legendRows > 0 ? CGFloat(legendRows) * 21 + 44 : 0)
+    static func footprint(corner: Corner, size: CGSize, insets: EdgeInsets, legendRows: Int = 0, alertRows: Int = 0,
+                          showsRoute: Bool = false) -> CGRect {
+        let h: CGFloat = 240 + (showsRoute ? 50 : 0) + (legendRows > 0 ? CGFloat(legendRows) * 22 + 44 : 0)
+            + CGFloat(min(alertRows, 3)) * 18
         let x = corner == .topLeft || corner == .bottomLeft ? insets.leading + margin - 12 : size.width - insets.trailing - margin - width + 12
         let y = corner == .topLeft || corner == .topRight ? insets.top + margin - 12 : size.height - insets.bottom - margin - h + 12
         return CGRect(x: x, y: y, width: width, height: h)
@@ -29,11 +31,13 @@ struct InfoCorner: View {
             VStack(alignment: hAlign, spacing: 18) {
                 if isTop {
                     placeBlock(now: timeline.date)
+                    alertBlock
                     overheadBlock
                     airlineBlock
                 } else {
                     airlineBlock
                     overheadBlock
+                    alertBlock
                     placeBlock(now: timeline.date)
                 }
             }
@@ -67,10 +71,13 @@ struct InfoCorner: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .foregroundStyle(palette.textPrimary.color)
-            Text(metaLine(now: now))
-                .font(Typeface.mono(11, .medium))
-                .tracking(1.2)
-                .foregroundStyle(palette.textSecondary.color)
+            ForEach(metaLines(now: now), id: \.self) { line in
+                Text(line)
+                    .font(Typeface.mono(11, .medium))
+                    .tracking(1.2)
+                    .foregroundStyle(palette.textSecondary.color)
+                    .lineLimit(1)
+            }
             if let status = statusLine(now: now) {
                 Text(status)
                     .font(Typeface.mono(10.5, .semibold))
@@ -80,14 +87,17 @@ struct InfoCorner: View {
         }
     }
 
-    private func metaLine(now: Date) -> String {
-        var parts: [String] = []
-        if model.settings.infoShowCoordinates, let c = model.center { parts.append(Format.coordinate(c)) }
-        if model.settings.infoShowClock { parts.append(now.formatted(date: .omitted, time: .shortened).uppercased()) }
+    /// Where and when on one line; traffic counts on the next, so neither overflows the column.
+    private func metaLines(now: Date) -> [String] {
+        var place: [String] = []
+        if model.settings.infoShowCoordinates, let c = model.center { place.append(Format.coordinate(c)) }
+        if model.settings.infoShowClock { place.append(now.formatted(date: .omitted, time: .shortened).uppercased()) }
+        var traffic: [String] = []
         if model.settings.infoShowCount, model.center != nil {
-            parts.append("\(model.aircraftInView) AIRCRAFT")
+            traffic.append("\(model.aircraftInView) IN VIEW")
+            if model.aircraftToday > 0 { traffic.append("\(model.aircraftToday.formatted()) SEEN TODAY") }
         }
-        return parts.joined(separator: "  ·  ")
+        return [place, traffic].filter { !$0.isEmpty }.map { $0.joined(separator: "  ·  ") }
     }
 
     private func statusLine(now: Date) -> String? {
@@ -101,6 +111,11 @@ struct InfoCorner: View {
     }
 
     // MARK: Airlines
+
+    /// Whether the nearest flight has a route strip (it adds two lines).
+    static func showsRoute(_ model: AppModel) -> Bool {
+        model.settings.infoShowOverhead && model.overhead?.details?.origin != nil && model.overhead?.details?.destination != nil
+    }
 
     static func legendRows(_ model: AppModel) -> Int {
         guard model.settings.infoEnabled, model.settings.infoShowAirlines, model.settings.colorMode == .airline else { return 0 }
@@ -120,7 +135,8 @@ struct InfoCorner: View {
                     .padding(.bottom, 3)
                 ForEach(legend.entries, id: \.code) { entry in
                     legendRow(name: model.airlineNames[entry.code] ?? entry.code, count: entry.count,
-                              color: palette.airlineColor(entry.slot), emphasis: true)
+                              color: model.airlineColor(entry.code, palette: palette) ?? palette.otherAirline, emphasis: true,
+                              paint: model.paint(code: entry.code, palette: palette))
                 }
                 if legend.otherAirlines > 0 {
                     legendRow(name: "Other airlines", count: legend.otherAirlines, color: palette.otherAirline, emphasis: false)
@@ -133,10 +149,12 @@ struct InfoCorner: View {
         }
     }
 
-    private func legendRow(name: String, count: Int, color: RGBA, emphasis: Bool) -> some View {
+    private func legendRow(name: String, count: Int, color: RGBA, emphasis: Bool, paint: LiveryPaint? = nil) -> some View {
         HStack(spacing: 10) {
-            PlaneMark(color: color, outline: palette.land)
-                .frame(width: 16, height: 16)
+            // Full liveries need a little more size than a solid mark for the tail to read.
+            PlaneMark(color: color, outline: palette.land, paint: paint, palette: palette)
+                .frame(width: paint == nil ? 16 : 21, height: paint == nil ? 16 : 21)
+                .frame(width: 21, height: 16)
             Text(name)
                 .font(.system(size: 12.5, weight: emphasis ? .medium : .regular))
                 .foregroundStyle((emphasis ? palette.textPrimary : palette.textSecondary).color)
@@ -149,6 +167,30 @@ struct InfoCorner: View {
         .frame(width: 230)
     }
 
+    // MARK: Alerts
+
+    @ViewBuilder
+    private var alertBlock: some View {
+        if model.center != nil, !model.alerts.isEmpty {
+            VStack(alignment: hAlign, spacing: 4) {
+                ForEach(model.alerts.prefix(3), id: \.hex) { a in
+                    Text(alertLine(a))
+                        .font(Typeface.mono(10.5, .semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(palette.alert.color)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: isLeading ? .leading : .trailing)
+        }
+    }
+
+    private func alertLine(_ a: AlertFlight) -> String {
+        let code = a.squawk.map { "SQUAWK \($0)" } ?? a.alert.title.uppercased()
+        let miles = Format.distance(miles: a.distanceNM / Geo.nmPerMile)
+        return "\(code)  ·  \(a.name)  ·  \(miles) \(Geo.compassPoint(a.bearingDeg))"
+    }
+
     // MARK: Overhead
 
     @ViewBuilder
@@ -156,9 +198,12 @@ struct InfoCorner: View {
         if model.settings.infoShowOverhead, let center = model.center, let o = model.overhead,
            let a = model.tracker.aircraft[o.hex] {
             let r = a.latest
-            let miles = Geo.distanceNM(r.position, center) / Geo.nmPerMile
+            let position = Motion.deadReckon(r, at: Date().timeIntervalSince1970, maxExtrapolation: 75)
+            let miles = Geo.distanceNM(position, center) / Geo.nmPerMile
+            let direction = Geo.compassPoint(Geo.bearingDeg(from: center, to: position))
+            let color = model.color(for: r, palette: palette)
             VStack(alignment: hAlign, spacing: 5) {
-                Text("NEAREST")
+                Text("NEAREST  ·  \(Format.distance(miles: miles)) \(direction)")
                     .font(Typeface.caption(9.5))
                     .tracking(2.4)
                     .foregroundStyle(palette.textTertiary.color)
@@ -168,17 +213,24 @@ struct InfoCorner: View {
                         .font(Typeface.mono(22, .semibold))
                         .tracking(1.5)
                         .foregroundStyle(palette.textPrimary.color)
-                    PlaneMark(color: model.color(for: r, palette: palette), outline: palette.land)
-                        .frame(width: 18, height: 18)
+                    PlaneMark(color: color, outline: palette.land, paint: model.paint(for: r, palette: palette), palette: palette)
+                        .frame(width: 24, height: 24)
+                        .frame(width: 24, height: 18)
                     if isLeading { Spacer(minLength: 0) }
                 }
-                if let line = routeLine(o.details) {
+                if let line = operatorLine(r, o.details) {
                     Text(line)
-                        .font(.system(size: 12.5, weight: .regular))
+                        .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(palette.textSecondary.color)
                         .lineLimit(1)
                 }
-                Text(statsLine(r, miles: miles, details: o.details))
+                if let origin = o.details?.origin, let destination = o.details?.destination {
+                    RouteStrip(origin: origin, destination: destination, position: position,
+                               color: color, paint: model.paint(for: r, palette: palette), palette: palette)
+                        .frame(width: 330)
+                        .padding(.vertical, 5)
+                }
+                Text(statsLine(r, position: position, details: o.details))
                     .font(Typeface.mono(10.5, .medium))
                     .tracking(1)
                     .foregroundStyle(palette.textSecondary.color)
@@ -188,21 +240,108 @@ struct InfoCorner: View {
         }
     }
 
-    private func routeLine(_ d: FlightDetails?) -> String? {
-        guard let d else { return nil }
+    /// "American Eagle · PSA Airlines" for regional flights, the airline for mainline ones,
+    /// the airframe for everything else.
+    private func operatorLine(_ r: AircraftReport, _ d: FlightDetails?) -> String? {
         var parts: [String] = []
-        if let o = d.origin, let dest = d.destination { parts.append("\(o) → \(dest)") }
-        if let airline = d.airline { parts.append(airline) } else if let craft = d.aircraftDescription { parts.append(craft) }
-        return parts.isEmpty ? nil : parts.joined(separator: "   ")
+        if r.isMilitary { parts.append("Military") }
+        if let id = Airlines.identity(fromCallsign: r.callsign) {
+            // `airlineNames` holds the bare code until its lookup returns; a code alone says nothing here.
+            let looked = model.airlineNames[id.operatorCode].flatMap { $0 == id.operatorCode ? nil : $0 }
+            let operatorName = d?.airline ?? Airlines.displayName(id.operatorCode) ?? looked
+            if let program = id.program {
+                parts.append(program)
+                if let operatorName { parts.append(operatorName) }
+            } else if let name = operatorName ?? Airlines.displayName(id.brandCode) {
+                parts.append(name)
+            }
+        } else if let craft = d?.aircraftDescription, !craft.isEmpty {
+            parts.append(craft)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
-    private func statsLine(_ r: AircraftReport, miles: Double, details: FlightDetails?) -> String {
+    private func statsLine(_ r: AircraftReport, position: Coordinate, details: FlightDetails?) -> String {
         var parts: [String] = []
         if let t = r.typeCode { parts.append(t) }
-        parts.append(Format.altitude(r.altitudeFt, onGround: r.onGround))
+        let trend = Format.trend(r.verticalRateFpm)
+        parts.append((trend.isEmpty ? "" : trend + " ") + Format.altitude(r.altitudeFt, onGround: r.onGround))
         if let gs = r.groundSpeedKt { parts.append("\(Int(gs.rounded())) KT") }
-        parts.append(Format.distance(miles: miles))
+        if let from = details?.origin?.coordinate, let to = details?.destination?.coordinate,
+           let progress = RouteProgress(origin: from, destination: to, position: position), progress.remainingNM > 5 {
+            parts.append("\(Format.distance(miles: progress.remainingNM / Geo.nmPerMile)) TO GO")
+        }
         return parts.joined(separator: "  ·  ")
+    }
+}
+
+/// Origin and destination with their cities, joined by a line that fills in as the flight
+/// progresses, the way a departures board or flight tracker shows it.
+struct RouteStrip: View {
+    let origin: RouteAirport
+    let destination: RouteAirport
+    let position: Coordinate
+    let color: RGBA
+    var paint: LiveryPaint?
+    let palette: Palette
+
+    private var progress: RouteProgress? {
+        guard let a = origin.coordinate, let b = destination.coordinate else { return nil }
+        return RouteProgress(origin: a, destination: b, position: position)
+    }
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 10) {
+                code(origin.code)
+                track.frame(height: 16)
+                code(destination.code)
+            }
+            HStack(alignment: .firstTextBaseline) {
+                city(origin)
+                Spacer(minLength: 16)
+                city(destination).multilineTextAlignment(.trailing)
+            }
+        }
+    }
+
+    private func code(_ c: String) -> some View {
+        Text(c)
+            .font(Typeface.mono(15, .semibold))
+            .tracking(1.2)
+            .foregroundStyle(palette.textPrimary.color)
+            .fixedSize()
+    }
+
+    private func city(_ a: RouteAirport) -> some View {
+        Text(a.city ?? a.name ?? "")
+            .font(.system(size: 11.5))
+            .foregroundStyle(palette.textSecondary.color)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: 160, alignment: a == origin ? .leading : .trailing)
+    }
+
+    private var track: some View {
+        Canvas { ctx, size in
+            let y = size.height / 2
+            let fraction = progress?.fraction
+            let split = size.width * CGFloat(fraction ?? 0)
+            var ahead = Path()
+            ahead.move(to: CGPoint(x: split, y: y))
+            ahead.addLine(to: CGPoint(x: size.width, y: y))
+            ctx.stroke(ahead, with: .color(palette.textTertiary.color),
+                       style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 3]))
+            guard fraction != nil else { return }
+            var flown = Path()
+            flown.move(to: CGPoint(x: 0, y: y))
+            flown.addLine(to: CGPoint(x: split, y: y))
+            ctx.stroke(flown, with: .color(color.with(alpha: 0.9).color), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            // The plane rides the line, nose toward the destination.
+            let x = min(max(split, 8), size.width - 8)
+            PlaneMark.draw(in: &ctx, center: CGPoint(x: x, y: y), size: 15, rotation: .pi / 2,
+                           color: color, outline: palette.land, paint: paint, palette: palette)
+        }
     }
 }
 
@@ -210,18 +349,33 @@ struct InfoCorner: View {
 struct PlaneMark: View {
     let color: RGBA
     let outline: RGBA
+    var paint: LiveryPaint?
+    var palette: Palette?
 
     var body: some View {
         Canvas { ctx, size in
-            let path = Silhouettes.jet
-            let box = path.boundingBoxOfPath
-            let s = min(size.width, size.height) / max(box.width, box.height) * 0.92
-            let t = CGAffineTransform(scaleX: s, y: s)
-                .concatenating(CGAffineTransform(rotationAngle: .pi / 4))
-                .concatenating(CGAffineTransform(translationX: size.width / 2, y: size.height / 2))
-            let shape = Path(path).applying(t)
-            ctx.stroke(shape, with: .color(outline.color), lineWidth: 1.2)
-            ctx.fill(shape, with: .color(color.color))
+            Self.draw(in: &ctx, center: CGPoint(x: size.width / 2, y: size.height / 2),
+                      size: min(size.width, size.height) * 0.92, rotation: .pi / 4,
+                      color: color, outline: outline, paint: paint, palette: palette)
         }
+    }
+
+    /// A jet icon `size` points long, in full livery when `paint` is given.
+    static func draw(in ctx: inout GraphicsContext, center: CGPoint, size: CGFloat, rotation: CGFloat,
+                     color: RGBA, outline: RGBA, paint: LiveryPaint?, palette: Palette?) {
+        let parts = Silhouettes.jetParts
+        let box = parts.outline.boundingBoxOfPath
+        let s = size / max(box.width, box.height)
+        let t = CGAffineTransform(scaleX: s, y: s)
+            .concatenating(CGAffineTransform(rotationAngle: rotation))
+            .concatenating(CGAffineTransform(translationX: center.x, y: center.y))
+        if let paint {
+            LiveryGlyph.draw(parts, transform: t, paint: paint, outline: palette?.liveryOutline ?? outline,
+                             outlineWidth: 1.3, alpha: 1, in: &ctx)
+            return
+        }
+        let shape = Path(parts.outline).applying(t)
+        ctx.stroke(shape, with: .color(outline.color), lineWidth: 1.2)
+        ctx.fill(shape, with: .color(color.color))
     }
 }

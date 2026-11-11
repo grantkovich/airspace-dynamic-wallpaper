@@ -44,6 +44,12 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
 
     public var labelMode: LabelMode = .callsign
     public var colorMode: ColorMode = .airline
+    /// Count and colour regional flights (PSA, Envoy, SkyWest…) as the airline they fly for.
+    public var groupRegionals = true
+    /// Paint each airline in its own livery colour, rather than four maximally distinct colours.
+    public var liveryColors = true
+    /// With livery colours and plane icons: paint body, tail and engines separately.
+    public var fullLivery = true
     public var trailMinutes: Double = 3
     public var glyph: GlyphStyle = .silhouette
     public var pulse = true
@@ -89,7 +95,7 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case location, displayName, mapStyle, zoomMiles, showRangeRings, showRunways, showRoads, showDotGrid,
-             tintAppleMap, labelMode, colorMode, trailMinutes, glyph, pulse, brightness, showGroundTraffic,
+             tintAppleMap, labelMode, colorMode, groupRegionals, liveryColors, fullLivery, trailMinutes, glyph, pulse, brightness, showGroundTraffic,
              minAltitudeFt, appearance, dynamicSource, infoEnabled, infoCorner, infoShowClock,
              infoShowCoordinates, infoShowCount, infoShowOverhead, infoShowAirlines, pollInterval, batterySaver, fpsCap,
              displays, syncSystemWallpaper, hasCompletedOnboarding, schemaVersion
@@ -112,6 +118,9 @@ public struct WallpaperSettings: Codable, Hashable, Sendable {
         tintAppleMap = v(.tintAppleMap, d.tintAppleMap)
         labelMode = v(.labelMode, d.labelMode)
         colorMode = v(.colorMode, d.colorMode)
+        groupRegionals = v(.groupRegionals, d.groupRegionals)
+        liveryColors = v(.liveryColors, d.liveryColors)
+        fullLivery = v(.fullLivery, d.fullLivery)
         trailMinutes = v(.trailMinutes, d.trailMinutes)
         glyph = v(.glyph, d.glyph)
         pulse = v(.pulse, d.pulse)
