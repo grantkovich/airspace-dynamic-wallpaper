@@ -74,7 +74,7 @@ Because it isn't notarized, a DMG downloaded in a browser needs one approval in 
 Settings › Privacy & Security › Open Anyway. The installer downloads with curl, so it doesn't:
 
 ```sh
-curl -fsSL https://downloads.grantkovich.com/airspace/install.sh | sh
+curl -fsSL https://github.com/grantkovich/airspace-dynamic-wallpaper/releases/latest/download/install.sh | sh
 ```
 
 ## How it works
@@ -116,3 +116,8 @@ Tools/                 geodata preprocessor (Natural Earth + OurAirports → Res
   both public domain. Rebuild the map data with `make geodata`.
 
 Only the map center (and the nearest flight's callsign) is sent to these services.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Data and bundled typefaces keep their own licenses (see the
+Data section and the app's About panel).
