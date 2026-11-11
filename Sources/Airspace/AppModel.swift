@@ -44,6 +44,12 @@ final class AppModel {
     private(set) var locationMessage: String?
     private(set) var isResolvingLocation = false
 
+    // MARK: System wallpaper
+    /// A display shows a map still and its own picture couldn't be put back automatically.
+    /// Set by SystemWallpaperSync; the menu and Settings then offer "Restore My Wallpaper…".
+    var wallpaperNeedsManualRestore = false
+    @ObservationIgnored var restoreWallpaperManually: (() -> Void)?
+
     // MARK: Traffic
     @ObservationIgnored var tracker = AircraftTracker()
     private(set) var lastSuccess: Date?

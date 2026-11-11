@@ -653,8 +653,15 @@ struct DesktopSettings: View {
 
     var body: some View {
         SettingsGroup(title: "Desktop",
-                      footer: "macOS tints the menu bar, Mission Control and Show Desktop from the system wallpaper. Matching it to the map keeps those see-through. Your own wallpaper comes back when Airspace quits or this is turned off.") {
+                      footer: "macOS tints the menu bar, Mission Control and Show Desktop from the system wallpaper. Matching it to the map keeps those see-through. Your own wallpaper comes back when Airspace quits or this is turned off. If you delete Airspace without quitting it, pick your wallpaper again in System Settings › Wallpaper.") {
             Toggle("Match the menu bar and system wallpaper", isOn: $model.settings.syncSystemWallpaper)
+            if model.wallpaperNeedsManualRestore {
+                SettingsRow(title: "Your wallpaper") {
+                    Button("Restore My Wallpaper…") { model.restoreWallpaperManually?() }
+                }
+                Text("Airspace couldn't put your own picture back by itself, usually because it's in a folder Airspace isn't allowed to read. Pick it once and Airspace will use it from then on.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             SettingsRow(title: "Displays") {
                 Picker("Displays", selection: $model.settings.displays) {
                     Text("All displays").tag(DisplayTarget.all)
