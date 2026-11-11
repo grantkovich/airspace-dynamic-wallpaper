@@ -64,13 +64,18 @@ On first launch a welcome window asks where you are. After that, everything live
 
 ### Distributing
 
-```sh
-xcrun notarytool store-credentials airspace   # once
-make release SIGN_ID="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=airspace
-```
+Airspace is free and ships without the paid Apple Developer Program. `make release` builds a
+universal app (Apple Silicon and Intel) signed with a self-signed certificate, and writes a
+zip, a DMG, `SHA256SUMS` and a one-line Terminal installer (`install.sh`). The steps and the
+certificate are in [RELEASING.md](RELEASING.md). The app is sandboxed and asks only for
+network access and location.
 
-This produces a signed, notarized and stapled `build/Airspace.dmg`. The app is sandboxed and
-asks only for network access and location.
+Because it isn't notarized, a DMG downloaded in a browser needs one approval in System
+Settings › Privacy & Security › Open Anyway. The installer downloads with curl, so it doesn't:
+
+```sh
+curl -fsSL https://downloads.grantkovich.com/airspace/install.sh | sh
+```
 
 ## How it works
 
