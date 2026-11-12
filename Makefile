@@ -113,7 +113,7 @@ release:
 # login keychain. Published with the release; the app reads releases/latest/download/appcast.xml.
 appcast:
 	rm -rf $(BUILD_DIR)/appcast && mkdir -p $(BUILD_DIR)/appcast && cp $(ZIP) $(BUILD_DIR)/appcast/
-	"$(SPARKLE_BIN)/generate_appcast" --download-url-prefix "$(DOWNLOAD_URL)/" \
+	"$(SPARKLE_BIN)/generate_appcast" $(if $(SPARKLE_KEY_FILE),--ed-key-file "$(SPARKLE_KEY_FILE)") --download-url-prefix "$(DOWNLOAD_URL)/" \
 	  --link "https://grantkovich.com/apps/airspace/" $(BUILD_DIR)/appcast
 	cp $(BUILD_DIR)/appcast/appcast.xml $(BUILD_DIR)/appcast.xml
 

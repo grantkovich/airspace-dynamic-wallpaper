@@ -43,6 +43,10 @@ Updates are checked with [Sparkle](https://sparkle-project.org) 2.10.1. Each rel
   (SHA-256 `1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27`). On a new Mac,
   download that release, check the hash, and import the key with
   `generate_keys -f ~/.wallpaper-signing/sparkle-eddsa-private-key`.
+- If `make release` stops with "Private key for account ed25519 not found in the Keychain", macOS
+  couldn't ask permission to read the key (a script or background run). Add
+  `SPARKLE_KEY_FILE=~/.wallpaper-signing/sparkle-eddsa-private-key` to the `make release` line to
+  sign with the backup file instead.
 - The app finds updates at `releases/latest/download/appcast.xml`, so publishing a release
   is all it takes. It asks people before checking automatically.
 
