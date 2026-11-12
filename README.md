@@ -113,8 +113,10 @@ Tools/                 geodata preprocessor (Natural Earth + OurAirports → Res
   airlines that get a color. adsbdb's routes go stale and are often listed backwards, so
   every route is checked against the aircraft first. Away from the airports, a flight
   pointed within 60° of its destination shows as listed; one on the route line pointed within
-  45° of its origin shows flipped; anything else (wrong position or heading) is hidden rather
-  than shown wrong.
+  45° of its origin shows flipped; a plane below 10,000 ft more than 50 nm from both airports
+  is landing or taking off somewhere else; anything else that doesn't fit is hidden rather
+  than shown wrong. Routes are a community database of a flight number's usual route, not
+  live flight plans, which only paid services have.
 - Map: [Natural Earth](https://www.naturalearthdata.com) 10m and [OurAirports](https://ourairports.com),
   both public domain. Rebuild the map data with `make geodata`.
 

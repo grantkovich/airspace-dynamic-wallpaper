@@ -347,6 +347,28 @@ struct SeededRandom: RandomNumberGenerator {
         #expect(FlightDetails(origin: phl, destination: pit).verifiedRoute(position: overMaryland, trackDeg: 225) == nil)
     }
 
+    /// RPA4640, 2026-11-12: listed New York JFK → Pittsburgh, but at 1,975 ft and 165 kt five
+    /// miles south of Reagan National, heading 355° up the river to land there. The heading is
+    /// within 60° of Pittsburgh, so only the altitude gives it away: below 10,000 ft a plane is
+    /// near the airport it's leaving or landing at.
+    @Test func lowAndFarFromBothAirportsMeansStaleRoute() {
+        let jfk = RouteAirport(code: "JFK", city: "New York", coordinate: Coordinate(latitude: 40.6398, longitude: -73.7789))
+        let pit = RouteAirport(code: "PIT", city: "Pittsburgh", coordinate: Coordinate(latitude: 40.4915, longitude: -80.2329))
+        let finalIntoDCA = Coordinate(latitude: 38.7604, longitude: -77.0284)
+        let details = FlightDetails(origin: jfk, destination: pit)
+        #expect(details.verifiedRoute(position: finalIntoDCA, trackDeg: 355.5) != nil)   // heading alone passes
+        #expect(details.verifiedRoute(position: finalIntoDCA, trackDeg: 355.5, altitudeFt: 1975) == nil)
+        #expect(details.verifiedRoute(position: finalIntoDCA, trackDeg: 355.5, altitudeFt: 34000) != nil)
+    }
+
+    /// Low near either listed airport is normal: climbing out, or on the way in.
+    @Test func lowNearAListedAirportIsFine() {
+        let onApproach = Geo.offset(phl.coordinate!, distanceNM: 20, bearingDeg: 280)
+        let route = FlightDetails(origin: pit, destination: phl)
+            .verifiedRoute(position: onApproach, trackDeg: Geo.bearingDeg(from: onApproach, to: phl.coordinate!), altitudeFt: 4000)
+        #expect(route?.destination == phl)
+    }
+
     /// Without airport coordinates the route can't be checked, so it isn't shown.
     @Test func unverifiableRoutesAreHidden() {
         let details = FlightDetails(origin: RouteAirport(code: "PIT"), destination: RouteAirport(code: "PHL"))

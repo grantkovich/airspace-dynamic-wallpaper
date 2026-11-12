@@ -139,6 +139,10 @@ extension FlightDetails {
     /// Pointed this close at the listed origin, mid-route, the flight is the same route the
     /// other way.
     public static let reversedHeadingErrorDeg = 45.0
+    /// Below this a plane is climbing out of an airport or coming down into one…
+    public static let lowAltitudeFt = 10_000.0
+    /// …so it should be this close to one of the listed airports.
+    public static let lowAltitudeRadiusNM = 50.0
 
     /// The route to show, or nil when it can't be trusted: missing airport positions, or an
     /// aircraft position or heading that doesn't fit (route databases go stale as flight
@@ -147,9 +151,16 @@ extension FlightDetails {
     /// adsbdb often lists a route backwards: in a live sample (2026-11-12) 12 of 22 routes that
     /// fit the position had the aircraft flying straight at its listed origin. When the
     /// aircraft is on the route line and pointed at the origin, the route is shown flipped.
-    public func verifiedRoute(position: Coordinate, trackDeg: Double?)
+    ///
+    /// Low and far from both airports (RPA4640, 2026-11-12: listed JFK → Pittsburgh, on final
+    /// into Reagan National at 1,975 ft), the plane is on a different trip either way.
+    public func verifiedRoute(position: Coordinate, trackDeg: Double?, altitudeFt: Double? = nil)
         -> (origin: RouteAirport, destination: RouteAirport, progress: RouteProgress)? {
         guard let origin, let destination, let from = origin.coordinate, let to = destination.coordinate else { return nil }
+        if let altitudeFt, altitudeFt < Self.lowAltitudeFt,
+           min(Geo.distanceNM(position, from), Geo.distanceNM(position, to)) > Self.lowAltitudeRadiusNM {
+            return nil
+        }
         if let progress = RouteProgress(origin: from, destination: to, position: position, trackDeg: trackDeg) {
             return (origin, destination, progress)
         }
