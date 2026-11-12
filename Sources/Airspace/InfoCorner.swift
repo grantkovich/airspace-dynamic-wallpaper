@@ -215,7 +215,8 @@ struct InfoCorner: View {
                         .font(Typeface.mono(22, .semibold))
                         .tracking(1.5)
                         .foregroundStyle(palette.textPrimary.color)
-                    PlaneMark(color: color, outline: palette.land, paint: model.paint(for: r, palette: palette), palette: palette)
+                    PlaneMark(color: color, outline: palette.land, paint: model.paint(for: r, palette: palette), palette: palette,
+                              shape: AircraftClass.classify(category: r.category, typeCode: r.typeCode))
                         .frame(width: 24, height: 24)
                         .frame(width: 24, height: 18)
                     if isLeading { Spacer(minLength: 0) }
@@ -229,7 +230,8 @@ struct InfoCorner: View {
                 // A stale route (flight numbers get reused) is left out rather than shown wrong.
                 if let route = o.details?.verifiedRoute(position: position, trackDeg: r.trackDeg, altitudeFt: r.altitudeFt, confirmed: o.confirmed) {
                     RouteStrip(origin: route.origin, destination: route.destination, progress: route.progress,
-                               color: color, paint: model.paint(for: r, palette: palette), palette: palette)
+                               color: color, paint: model.paint(for: r, palette: palette), palette: palette,
+                               shape: AircraftClass.classify(category: r.category, typeCode: r.typeCode))
                         .frame(width: 330)
                         .padding(.vertical, 5)
                 }
@@ -287,6 +289,7 @@ struct RouteStrip: View {
     let color: RGBA
     var paint: LiveryPaint?
     let palette: Palette
+    var shape: AircraftClass = .jet
 
     var body: some View {
         VStack(spacing: 3) {
@@ -336,7 +339,7 @@ struct RouteStrip: View {
             // The plane rides the line, nose toward the destination.
             let x = min(max(split, 8), size.width - 8)
             PlaneMark.draw(in: &ctx, center: CGPoint(x: x, y: y), size: 15, rotation: .pi / 2,
-                           color: color, outline: palette.land, paint: paint, palette: palette)
+                           color: color, outline: palette.land, paint: paint, palette: palette, shape: shape)
         }
     }
 }
@@ -347,19 +350,21 @@ struct PlaneMark: View {
     let outline: RGBA
     var paint: LiveryPaint?
     var palette: Palette?
+    /// The shape the map draws for this aircraft. Legends keep the jet.
+    var shape: AircraftClass = .jet
 
     var body: some View {
         Canvas { ctx, size in
             Self.draw(in: &ctx, center: CGPoint(x: size.width / 2, y: size.height / 2),
                       size: min(size.width, size.height) * 0.92, rotation: .pi / 4,
-                      color: color, outline: outline, paint: paint, palette: palette)
+                      color: color, outline: outline, paint: paint, palette: palette, shape: shape)
         }
     }
 
-    /// A jet icon `size` points long, in full livery when `paint` is given.
+    /// An aircraft icon `size` points long, in full livery when `paint` is given.
     static func draw(in ctx: inout GraphicsContext, center: CGPoint, size: CGFloat, rotation: CGFloat,
-                     color: RGBA, outline: RGBA, paint: LiveryPaint?, palette: Palette?) {
-        let parts = Silhouettes.jetParts
+                     color: RGBA, outline: RGBA, paint: LiveryPaint?, palette: Palette?, shape: AircraftClass = .jet) {
+        let parts = Silhouettes.parts(for: shape)
         let box = parts.outline.boundingBoxOfPath
         let s = size / max(box.width, box.height)
         let t = CGAffineTransform(scaleX: s, y: s)

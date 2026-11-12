@@ -31,6 +31,7 @@ enum Snapshots {
             ("schematic-night-zoom10", { $0.appearance = .dark; $0.zoomMiles = 10 }),
             ("schematic-night-zoom120", { $0.appearance = .dark; $0.zoomMiles = 120 }),
             ("schematic-night-emergency", { $0.appearance = .dark }),
+            ("schematic-night-helicopter", { $0.appearance = .dark }),
         ]
         renderGlyphSpecimen(dir: dir)
         renderAppleMap(center: center, name: name, geo: geo, reports: reports, size: size, dir: dir)
@@ -54,6 +55,12 @@ enum Snapshots {
                     reports[i].squawk = "7700"
                     reports[i].alert = .emergency
                 }
+            }
+            if file.hasSuffix("helicopter") {
+                // A helicopter right overhead, to check the info corner draws it as one.
+                reports.append(AircraftReport(hex: "a0ffee", callsign: "N123HX", typeCode: "EC35", category: "A7",
+                                              position: Geo.offset(center, distanceNM: 0.6, bearingDeg: 120), altitudeFt: 1_100,
+                                              groundSpeedKt: 110, trackDeg: 300, fixTime: now))
             }
             model.stage(center: center, name: name, geo: geo, reports: reports, now: now,
                         details: FlightDetails(
