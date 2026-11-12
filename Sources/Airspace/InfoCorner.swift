@@ -116,7 +116,7 @@ struct InfoCorner: View {
     /// where the aircraft is and where it's heading.
     static func showsRoute(_ model: AppModel) -> Bool {
         guard model.settings.infoShowOverhead, let o = model.overhead, let a = model.tracker.aircraft[o.hex] else { return false }
-        return o.details?.verifiedRoute(position: a.latest.position, trackDeg: a.latest.trackDeg, altitudeFt: a.latest.altitudeFt) != nil
+        return o.details?.verifiedRoute(position: a.latest.position, trackDeg: a.latest.trackDeg, altitudeFt: a.latest.altitudeFt, confirmed: o.confirmed) != nil
     }
 
     static func legendRows(_ model: AppModel) -> Int {
@@ -227,13 +227,13 @@ struct InfoCorner: View {
                         .lineLimit(1)
                 }
                 // A stale route (flight numbers get reused) is left out rather than shown wrong.
-                if let route = o.details?.verifiedRoute(position: position, trackDeg: r.trackDeg, altitudeFt: r.altitudeFt) {
+                if let route = o.details?.verifiedRoute(position: position, trackDeg: r.trackDeg, altitudeFt: r.altitudeFt, confirmed: o.confirmed) {
                     RouteStrip(origin: route.origin, destination: route.destination, progress: route.progress,
                                color: color, paint: model.paint(for: r, palette: palette), palette: palette)
                         .frame(width: 330)
                         .padding(.vertical, 5)
                 }
-                Text(statsLine(r, position: position, details: o.details))
+                Text(statsLine(r, position: position, details: o.details, confirmed: o.confirmed))
                     .font(Typeface.mono(10.5, .medium))
                     .tracking(1)
                     .foregroundStyle(palette.textSecondary.color)
@@ -264,13 +264,13 @@ struct InfoCorner: View {
         return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
-    private func statsLine(_ r: AircraftReport, position: Coordinate, details: FlightDetails?) -> String {
+    private func statsLine(_ r: AircraftReport, position: Coordinate, details: FlightDetails?, confirmed: RouteDirection?) -> String {
         var parts: [String] = []
         if let t = r.typeCode { parts.append(t) }
         let trend = Format.trend(r.verticalRateFpm)
         parts.append((trend.isEmpty ? "" : trend + " ") + Format.altitude(r.altitudeFt, onGround: r.onGround))
         if let gs = r.groundSpeedKt { parts.append("\(Int(gs.rounded())) KT") }
-        if let progress = details?.verifiedRoute(position: position, trackDeg: r.trackDeg, altitudeFt: r.altitudeFt)?.progress, progress.remainingNM > 5 {
+        if let progress = details?.verifiedRoute(position: position, trackDeg: r.trackDeg, altitudeFt: r.altitudeFt, confirmed: confirmed)?.progress, progress.remainingNM > 5 {
             parts.append("\(Format.distance(miles: progress.remainingNM / Geo.nmPerMile)) TO GO")
         }
         return parts.joined(separator: "  ·  ")

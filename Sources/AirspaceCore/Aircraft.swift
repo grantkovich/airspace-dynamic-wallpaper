@@ -154,23 +154,46 @@ extension FlightDetails {
     ///
     /// Low and far from both airports (RPA4640, 2026-11-12: listed JFK → Pittsburgh, on final
     /// into Reagan National at 1,975 ft), the plane is on a different trip either way.
-    public func verifiedRoute(position: Coordinate, trackDeg: Double?, altitudeFt: Double? = nil)
-        -> (origin: RouteAirport, destination: RouteAirport, progress: RouteProgress)? {
+    ///
+    /// The heading only tells a wrong route from a right one before the route has been seen to
+    /// fit. Arrivals get vectored, hold and turn onto final, pointing well away from the airport
+    /// for minutes (AAL2153, 2026-11-12: Boston → Reagan National, turning from 184° to 281° 50
+    /// miles out). So once a route has passed, pass back `confirmed` and only the position is
+    /// checked: the plane must still be near the line between the two airports. The altitude
+    /// rule still applies, since it doesn't depend on the heading.
+    public func verifiedRoute(position: Coordinate, trackDeg: Double?, altitudeFt: Double? = nil,
+                              confirmed: RouteDirection? = nil)
+        -> (origin: RouteAirport, destination: RouteAirport, progress: RouteProgress, direction: RouteDirection)? {
         guard let origin, let destination, let from = origin.coordinate, let to = destination.coordinate else { return nil }
         if let altitudeFt, altitudeFt < Self.lowAltitudeFt,
            min(Geo.distanceNM(position, from), Geo.distanceNM(position, to)) > Self.lowAltitudeRadiusNM {
             return nil
         }
+        switch confirmed {
+        case .listed?:
+            guard let progress = RouteProgress(origin: from, destination: to, position: position) else { return nil }
+            return (origin, destination, progress, .listed)
+        case .reversed?:
+            guard let progress = RouteProgress(origin: to, destination: from, position: position) else { return nil }
+            return (destination, origin, progress, .reversed)
+        case nil:
+            break
+        }
         if let progress = RouteProgress(origin: from, destination: to, position: position, trackDeg: trackDeg) {
-            return (origin, destination, progress)
+            return (origin, destination, progress, .listed)
         }
         if trackDeg != nil,
            let progress = RouteProgress(origin: to, destination: from, position: position, trackDeg: trackDeg,
                                         maxHeadingErrorDeg: Self.reversedHeadingErrorDeg) {
-            return (destination, origin, progress)
+            return (destination, origin, progress, .reversed)
         }
         return nil
     }
+}
+
+/// Which way round a route was shown: as the database lists it, or flipped.
+public enum RouteDirection: Hashable, Sendable {
+    case listed, reversed
 }
 
 /// How far along its route a flight is. Route databases go stale (flight numbers get reused),

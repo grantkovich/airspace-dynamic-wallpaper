@@ -369,6 +369,48 @@ struct SeededRandom: RandomNumberGenerator {
         #expect(route?.destination == phl)
     }
 
+    /// AAL2153, 2026-11-12: adsbdb lists Reagan National → Boston; the A319 was coming the other
+    /// way, 50 miles north of Reagan National at 10,500 ft, and turned from 184° to 281° in 45
+    /// seconds as approach vectored it into line. Four real readings, 15 seconds apart.
+    @Test func aConfirmedRouteSurvivesVectors() throws {
+        let dca = RouteAirport(code: "DCA", city: "Washington", coordinate: Coordinate(latitude: 38.8521, longitude: -77.0377))
+        let bos = RouteAirport(code: "BOS", city: "Boston", coordinate: Coordinate(latitude: 42.3643, longitude: -71.0052))
+        let details = FlightDetails(origin: dca, destination: bos)
+        let readings: [(Coordinate, Double)] = [
+            (Coordinate(latitude: 39.51056, longitude: -76.390198), 183.9),
+            (Coordinate(latitude: 39.460563, longitude: -76.433838), 241.05),
+            (Coordinate(latitude: 39.455017, longitude: -76.461679), 264.94),
+            (Coordinate(latitude: 39.45777, longitude: -76.489502), 281.08),
+        ]
+
+        // Pointed at Reagan National on first sight, so it passes flipped.
+        let first = try #require(details.verifiedRoute(position: readings[0].0, trackDeg: readings[0].1, altitudeFt: 10_475))
+        #expect(first.destination == dca && first.direction == .reversed)
+
+        // Checked from scratch, the turn hides it: 281° is too far from the airport.
+        #expect(details.verifiedRoute(position: readings[3].0, trackDeg: readings[3].1, altitudeFt: 10_500) == nil)
+
+        // Remembering the first answer keeps it through the whole turn.
+        for (position, track) in readings {
+            let route = try #require(details.verifiedRoute(position: position, trackDeg: track, altitudeFt: 10_500, confirmed: first.direction))
+            #expect(route.origin == bos && route.destination == dca)
+            #expect(route.progress.remainingNM > 40 && route.progress.remainingNM < 55)
+        }
+    }
+
+    /// Remembering a route only skips the heading: a plane far off the line, or low and far from
+    /// both airports, still loses it.
+    @Test func aConfirmedRouteStillNeedsThePosition() {
+        let jfk = RouteAirport(code: "JFK", city: "New York", coordinate: Coordinate(latitude: 40.6398, longitude: -73.7789))
+        let pit = RouteAirport(code: "PIT", city: "Pittsburgh", coordinate: Coordinate(latitude: 40.4915, longitude: -80.2329))
+        let details = FlightDetails(origin: jfk, destination: pit)
+        let denver = Coordinate(latitude: 39.86, longitude: -104.67)
+        #expect(details.verifiedRoute(position: denver, trackDeg: 270, confirmed: .listed) == nil)
+        let finalIntoDCA = Coordinate(latitude: 38.7604, longitude: -77.0284)
+        #expect(details.verifiedRoute(position: finalIntoDCA, trackDeg: 355.5, altitudeFt: 1975, confirmed: .listed) == nil)
+        #expect(details.verifiedRoute(position: finalIntoDCA, trackDeg: 180, altitudeFt: 34_000, confirmed: .listed) != nil)
+    }
+
     /// Without airport coordinates the route can't be checked, so it isn't shown.
     @Test func unverifiableRoutesAreHidden() {
         let details = FlightDetails(origin: RouteAirport(code: "PIT"), destination: RouteAirport(code: "PHL"))

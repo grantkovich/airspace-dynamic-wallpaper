@@ -13,6 +13,8 @@ struct AirlineLegend: Equatable {
 struct OverheadFlight: Equatable {
     var hex: String
     var details: FlightDetails?
+    /// Set once the route has passed the heading check, so turns and vectors don't hide it.
+    var confirmed: RouteDirection?
 }
 
 /// An aircraft in view squawking an emergency code.
@@ -106,6 +108,9 @@ final class AppModel {
 
     @ObservationIgnored private let source = FallbackSource([ReadsbSource(.adsbLol), ReadsbSource(.adsbFi)])
     @ObservationIgnored private let detailsService = FlightDetailsService()
+    /// Routes that passed the heading check, by aircraft and callsign, so a plane that turns away
+    /// and later becomes the nearest again keeps its route. Capped: the app runs for days.
+    @ObservationIgnored private var confirmedRoutes: [String: RouteDirection] = [:]
     @ObservationIgnored let location = LocationProvider()
     @ObservationIgnored private var nextFetch = Date.distantPast
     @ObservationIgnored private var consecutiveFailures = 0
@@ -519,5 +524,19 @@ final class AppModel {
                 if self.overhead?.hex == hex { self.overhead?.details = d }
             }
         }
+        confirmRoute(for: nearest)
+    }
+
+    /// Checks the overhead route's heading until it passes once, then remembers which way round.
+    private func confirmRoute(for a: DisplayAircraft) {
+        guard let details = overhead?.details else { return }
+        let key = "\(a.id)|\(a.report.callsign ?? "")"
+        if confirmedRoutes[key] == nil,
+           let route = details.verifiedRoute(position: a.position, trackDeg: a.report.trackDeg, altitudeFt: a.report.altitudeFt) {
+            if confirmedRoutes.count >= 2_000 { confirmedRoutes.removeAll(keepingCapacity: true) }
+            confirmedRoutes[key] = route.direction
+        }
+        let confirmed = confirmedRoutes[key]
+        if overhead?.confirmed != confirmed { overhead?.confirmed = confirmed }
     }
 }

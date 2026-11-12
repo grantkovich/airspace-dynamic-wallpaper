@@ -1,7 +1,7 @@
 # Airspace — build with the Swift toolchain alone (Xcode not required).
 APP_NAME   := Airspace
 BUNDLE_ID  := com.grantkovich.airspace
-VERSION    ?= 1.0.0
+VERSION    ?= 1.0.1
 BUILD_DIR  := build
 APP        := $(BUILD_DIR)/$(APP_NAME).app
 CONFIG     ?= release
