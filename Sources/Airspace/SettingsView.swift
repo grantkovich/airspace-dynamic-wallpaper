@@ -685,6 +685,7 @@ struct DesktopSettings: View {
                       footer: "Diagnostics are versions, displays and feed status, with no location. Paste them into your message.") {
             SettingsRow(title: "Something wrong?") {
                 HStack {
+                    Button("Check for Updates…") { model.checkForUpdates?() }
                     Button("Copy Diagnostics") { Diagnostics.copySummary(model: model) }
                     Link("Send Feedback", destination: URL(string: "https://grantkovich.com/contact/")!)
                 }

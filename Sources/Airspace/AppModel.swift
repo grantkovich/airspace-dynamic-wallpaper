@@ -49,6 +49,8 @@ final class AppModel {
     /// Set by SystemWallpaperSync; the menu and Settings then offer "Restore My Wallpaper…".
     var wallpaperNeedsManualRestore = false
     @ObservationIgnored var restoreWallpaperManually: (() -> Void)?
+    /// Set by the app delegate: Sparkle's "Check for Updates".
+    @ObservationIgnored var checkForUpdates: (() -> Void)?
 
     // MARK: Traffic
     @ObservationIgnored var tracker = AircraftTracker()

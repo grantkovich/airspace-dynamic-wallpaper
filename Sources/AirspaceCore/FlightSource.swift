@@ -14,7 +14,7 @@ public enum SourceError: Error, Equatable {
 /// Names the app, its version and a page where feed operators can reach the developer.
 let userAgent: String = {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-    return "Airspace/\(version) (macOS live wallpaper; +https://grantkovich.com/airspace/)"
+    return "Airspace/\(version) (macOS live wallpaper; +https://grantkovich.com/apps/airspace/)"
 }()
 
 /// Free, keyless readsb-compatible aggregator APIs.
