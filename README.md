@@ -110,8 +110,11 @@ Tools/                 geodata preprocessor (Natural Earth + OurAirports → Res
   Coverage is best near populated areas.
 - Routes (with airport cities and positions), airframes and airline names:
   [adsbdb.com](https://www.adsbdb.com), looked up only for the nearest flight and for
-  airlines that get a color. A route that doesn't fit the aircraft's position (stale flight
-  numbers are common) is hidden rather than shown wrong.
+  airlines that get a color. adsbdb's routes go stale and are often listed backwards, so
+  every route is checked against the aircraft first. Away from the airports, a flight
+  pointed within 60° of its destination shows as listed; one on the route line pointed within
+  45° of its origin shows flipped; anything else (wrong position or heading) is hidden rather
+  than shown wrong.
 - Map: [Natural Earth](https://www.naturalearthdata.com) 10m and [OurAirports](https://ourairports.com),
   both public domain. Rebuild the map data with `make geodata`.
 

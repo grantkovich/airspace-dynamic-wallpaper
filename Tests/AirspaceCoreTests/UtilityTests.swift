@@ -285,6 +285,73 @@ struct SeededRandom: RandomNumberGenerator {
         let denver = Coordinate(latitude: 39.86, longitude: -104.67)
         #expect(RouteProgress(origin: ord, destination: lga, position: denver) == nil)
     }
+    /// RPA4534, 2026-11-12: adsbdb said Pittsburgh → Philadelphia, but the jet was over College
+    /// Park, MD at FL320 heading 225°, away from both. Close enough to pass the distance check,
+    /// so the heading has to catch it.
+    @Test func headingAwayFromTheDestinationMeansStaleRoute() {
+        let pit = Coordinate(latitude: 40.4915, longitude: -80.2329)
+        let phl = Coordinate(latitude: 39.8719, longitude: -75.2411)
+        let overMaryland = Coordinate(latitude: 39.0304, longitude: -76.9496)
+        #expect(RouteProgress(origin: pit, destination: phl, position: overMaryland) != nil)   // distance alone passes
+        #expect(RouteProgress(origin: pit, destination: phl, position: overMaryland, trackDeg: 225) == nil)
+        #expect(RouteProgress(origin: pit, destination: phl, position: overMaryland, trackDeg: 50) != nil)
+    }
+
+    /// A route listed backwards puts the plane flying toward its "origin".
+    @Test func flyingTowardTheOriginMeansStaleRoute() {
+        let mid = Coordinate(latitude: 41.6, longitude: -80.9)
+        #expect(RouteProgress(origin: ord, destination: lga, position: mid, trackDeg: 95) != nil)
+        #expect(RouteProgress(origin: ord, destination: lga, position: mid, trackDeg: 275) == nil)
+    }
+
+    /// Near either airport anything goes: departures turn and arrivals get vectored.
+    @Test func anyHeadingNearTheAirports() {
+        let climbOut = Geo.offset(ord, distanceNM: 15, bearingDeg: 270)
+        #expect(RouteProgress(origin: ord, destination: lga, position: climbOut, trackDeg: 270) != nil)
+        let downwind = Geo.offset(lga, distanceNM: 20, bearingDeg: 0)
+        #expect(RouteProgress(origin: ord, destination: lga, position: downwind, trackDeg: 270) != nil)
+    }
+}
+
+@Suite struct VerifiedRouteTests {
+    let pit = RouteAirport(code: "PIT", city: "Pittsburgh", coordinate: Coordinate(latitude: 40.4915, longitude: -80.2329))
+    let phl = RouteAirport(code: "PHL", city: "Philadelphia", coordinate: Coordinate(latitude: 39.8719, longitude: -75.2411))
+
+    @Test func showsARouteOnlyWhenThePositionFitsIt() {
+        let details = FlightDetails(origin: pit, destination: phl)
+        let overMaryland = Coordinate(latitude: 39.0304, longitude: -76.9496)
+        #expect(details.verifiedRoute(position: overMaryland, trackDeg: 225) == nil)
+        let onTheWay = Geo.intermediate(pit.coordinate!, phl.coordinate!, fraction: 0.5)
+        let route = details.verifiedRoute(position: onTheWay, trackDeg: Geo.bearingDeg(from: onTheWay, to: phl.coordinate!))
+        #expect(route?.origin == pit)
+        #expect(route?.destination == phl)
+    }
+
+    /// adsbdb often lists a flight number's route backwards. DAL2411, 2026-11-12: listed
+    /// Atlanta → New York, but over Virginia at FL340 flying 233°, toward Atlanta. On the line
+    /// and pointed at the listed origin, it's the same route the other way.
+    @Test func aRouteListedBackwardsIsFlipped() throws {
+        let atl = RouteAirport(code: "ATL", city: "Atlanta", coordinate: Coordinate(latitude: 33.6367, longitude: -84.4281))
+        let lga = RouteAirport(code: "LGA", city: "New York", coordinate: Coordinate(latitude: 40.7772, longitude: -73.8726))
+        let overVirginia = Coordinate(latitude: 38.533, longitude: -78.047)
+        let route = try #require(FlightDetails(origin: atl, destination: lga).verifiedRoute(position: overVirginia, trackDeg: 233))
+        #expect(route.origin == lga)
+        #expect(route.destination == atl)
+        #expect(route.progress.fraction > 0.2 && route.progress.fraction < 0.5)
+    }
+
+    /// RPA4534 points at neither end (225° vs 300° to Pittsburgh), so it isn't flipped either.
+    @Test func aFlightHeadingForNeitherEndShowsNoRoute() {
+        let overMaryland = Coordinate(latitude: 39.0304, longitude: -76.9496)
+        #expect(FlightDetails(origin: pit, destination: phl).verifiedRoute(position: overMaryland, trackDeg: 225) == nil)
+        #expect(FlightDetails(origin: phl, destination: pit).verifiedRoute(position: overMaryland, trackDeg: 225) == nil)
+    }
+
+    /// Without airport coordinates the route can't be checked, so it isn't shown.
+    @Test func unverifiableRoutesAreHidden() {
+        let details = FlightDetails(origin: RouteAirport(code: "PIT"), destination: RouteAirport(code: "PHL"))
+        #expect(details.verifiedRoute(position: Coordinate(latitude: 40, longitude: -78), trackDeg: 90) == nil)
+    }
 }
 
 @Suite struct AlertTests {

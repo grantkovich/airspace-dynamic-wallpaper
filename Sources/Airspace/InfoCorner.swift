@@ -112,9 +112,11 @@ struct InfoCorner: View {
 
     // MARK: Airlines
 
-    /// Whether the nearest flight has a route strip (it adds two lines).
+    /// Whether the nearest flight has a route strip (it adds two lines): only a route that fits
+    /// where the aircraft is and where it's heading.
     static func showsRoute(_ model: AppModel) -> Bool {
-        model.settings.infoShowOverhead && model.overhead?.details?.origin != nil && model.overhead?.details?.destination != nil
+        guard model.settings.infoShowOverhead, let o = model.overhead, let a = model.tracker.aircraft[o.hex] else { return false }
+        return o.details?.verifiedRoute(position: a.latest.position, trackDeg: a.latest.trackDeg) != nil
     }
 
     static func legendRows(_ model: AppModel) -> Int {
@@ -224,8 +226,9 @@ struct InfoCorner: View {
                         .foregroundStyle(palette.textSecondary.color)
                         .lineLimit(1)
                 }
-                if let origin = o.details?.origin, let destination = o.details?.destination {
-                    RouteStrip(origin: origin, destination: destination, position: position,
+                // A stale route (flight numbers get reused) is left out rather than shown wrong.
+                if let route = o.details?.verifiedRoute(position: position, trackDeg: r.trackDeg) {
+                    RouteStrip(origin: route.origin, destination: route.destination, progress: route.progress,
                                color: color, paint: model.paint(for: r, palette: palette), palette: palette)
                         .frame(width: 330)
                         .padding(.vertical, 5)
@@ -267,8 +270,7 @@ struct InfoCorner: View {
         let trend = Format.trend(r.verticalRateFpm)
         parts.append((trend.isEmpty ? "" : trend + " ") + Format.altitude(r.altitudeFt, onGround: r.onGround))
         if let gs = r.groundSpeedKt { parts.append("\(Int(gs.rounded())) KT") }
-        if let from = details?.origin?.coordinate, let to = details?.destination?.coordinate,
-           let progress = RouteProgress(origin: from, destination: to, position: position), progress.remainingNM > 5 {
+        if let progress = details?.verifiedRoute(position: position, trackDeg: r.trackDeg)?.progress, progress.remainingNM > 5 {
             parts.append("\(Format.distance(miles: progress.remainingNM / Geo.nmPerMile)) TO GO")
         }
         return parts.joined(separator: "  ·  ")
@@ -280,15 +282,11 @@ struct InfoCorner: View {
 struct RouteStrip: View {
     let origin: RouteAirport
     let destination: RouteAirport
-    let position: Coordinate
+    /// From `FlightDetails.verifiedRoute`, so the strip only ever shows a checked route.
+    let progress: RouteProgress
     let color: RGBA
     var paint: LiveryPaint?
     let palette: Palette
-
-    private var progress: RouteProgress? {
-        guard let a = origin.coordinate, let b = destination.coordinate else { return nil }
-        return RouteProgress(origin: a, destination: b, position: position)
-    }
 
     var body: some View {
         VStack(spacing: 3) {
@@ -325,14 +323,12 @@ struct RouteStrip: View {
     private var track: some View {
         Canvas { ctx, size in
             let y = size.height / 2
-            let fraction = progress?.fraction
-            let split = size.width * CGFloat(fraction ?? 0)
+            let split = size.width * CGFloat(progress.fraction)
             var ahead = Path()
             ahead.move(to: CGPoint(x: split, y: y))
             ahead.addLine(to: CGPoint(x: size.width, y: y))
             ctx.stroke(ahead, with: .color(palette.textTertiary.color),
                        style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 3]))
-            guard fraction != nil else { return }
             var flown = Path()
             flown.move(to: CGPoint(x: 0, y: y))
             flown.addLine(to: CGPoint(x: split, y: y))

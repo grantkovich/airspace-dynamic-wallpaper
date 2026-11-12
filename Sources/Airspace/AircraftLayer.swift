@@ -268,9 +268,8 @@ struct AircraftRenderer {
     /// The rest of the featured flight's journey: a faint dashed great circle to its destination,
     /// with the destination marked if it's on screen. Skipped when the route looks stale.
     private func drawRoute(from a: DisplayAircraft, at p: CGPoint, color: RGBA, alpha: Double, in ctx: inout GraphicsContext) {
-        guard let dest = overhead?.details?.destination, let to = dest.coordinate,
-              let from = overhead?.details?.origin?.coordinate,
-              RouteProgress(origin: from, destination: to, position: a.position) != nil else { return }
+        guard let route = overhead?.details?.verifiedRoute(position: a.position, trackDeg: a.report.trackDeg),
+              let to = route.destination.coordinate else { return }
         let remaining = Geo.distanceNM(a.position, to)
         guard remaining > 1 else { return }
         // Enough samples to curve smoothly on screen; the far end can be well off screen.

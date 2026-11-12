@@ -135,6 +135,33 @@ public struct FlightDetails: Hashable, Sendable {
     }
 }
 
+extension FlightDetails {
+    /// Pointed this close at the listed origin, mid-route, the flight is the same route the
+    /// other way.
+    public static let reversedHeadingErrorDeg = 45.0
+
+    /// The route to show, or nil when it can't be trusted: missing airport positions, or an
+    /// aircraft position or heading that doesn't fit (route databases go stale as flight
+    /// numbers get reused). Everything that displays a route goes through this.
+    ///
+    /// adsbdb often lists a route backwards: in a live sample (2026-11-12) 12 of 22 routes that
+    /// fit the position had the aircraft flying straight at its listed origin. When the
+    /// aircraft is on the route line and pointed at the origin, the route is shown flipped.
+    public func verifiedRoute(position: Coordinate, trackDeg: Double?)
+        -> (origin: RouteAirport, destination: RouteAirport, progress: RouteProgress)? {
+        guard let origin, let destination, let from = origin.coordinate, let to = destination.coordinate else { return nil }
+        if let progress = RouteProgress(origin: from, destination: to, position: position, trackDeg: trackDeg) {
+            return (origin, destination, progress)
+        }
+        if trackDeg != nil,
+           let progress = RouteProgress(origin: to, destination: from, position: position, trackDeg: trackDeg,
+                                        maxHeadingErrorDeg: Self.reversedHeadingErrorDeg) {
+            return (destination, origin, progress)
+        }
+        return nil
+    }
+}
+
 /// How far along its route a flight is. Route databases go stale (flight numbers get reused),
 /// so a position well off the route between the two airports yields nil rather than a wrong answer.
 public struct RouteProgress: Hashable, Sendable {
@@ -143,13 +170,32 @@ public struct RouteProgress: Hashable, Sendable {
     public var flownNM: Double
     public var remainingNM: Double
 
-    public init?(origin: Coordinate, destination: Coordinate, position: Coordinate) {
+    /// Beyond this distance from both airports a flight should be heading for its destination.
+    static let freeHeadingRadiusNM = 30.0
+    /// How far the track may differ from the bearing to the destination (doglegs, airways). In
+    /// a live sample of 27 flights (2026-11-12) correct routes were at most 58° off; RPA4534's
+    /// wrong one was 75° off.
+    public static let maxHeadingErrorDeg = 60.0
+
+    /// - Parameters:
+    ///   - trackDeg: the aircraft's track, when known. A flight more than `freeHeadingRadiusNM`
+    ///     from both airports that isn't heading for its destination is on a different trip
+    ///     (RPA4534, 2026-11-12: listed Philadelphia → Pittsburgh while flying southwest over
+    ///     Maryland), or its route is listed backwards.
+    ///   - maxHeadingErrorDeg: the allowed difference between track and bearing to the destination.
+    public init?(origin: Coordinate, destination: Coordinate, position: Coordinate, trackDeg: Double? = nil,
+                 maxHeadingErrorDeg: Double = RouteProgress.maxHeadingErrorDeg) {
         let total = Geo.distanceNM(origin, destination)
         let flown = Geo.distanceNM(origin, position)
         let remaining = Geo.distanceNM(position, destination)
         guard total > 1 else { return nil }
         // On the route the two legs sum to the total; allow for vectoring, holds and departures.
         guard flown + remaining <= total * 1.25 + 60 else { return nil }
+        if let trackDeg, flown > Self.freeHeadingRadiusNM, remaining > Self.freeHeadingRadiusNM {
+            let toDestination = Geo.bearingDeg(from: position, to: destination)
+            let error = abs((trackDeg - toDestination + 540).truncatingRemainder(dividingBy: 360) - 180)
+            guard error <= maxHeadingErrorDeg else { return nil }
+        }
         self.fraction = min(1, max(0, flown / (flown + remaining)))
         self.flownNM = flown
         self.remainingNM = remaining
